@@ -1,0 +1,46 @@
+# Visual Studio 用户和缓存文件
+.vs/
+ipch/
+.vscode/
+*.suo
+*.user
+*.ncb
+*.sdf
+*.VC.db
+*.VC.VC.opendb
+*.opendb
+
+# Visual Studio 编译输出与调试符号
+[Dd]ebug/
+[Rr]elease/
+[Tt]emplate/
+x64/
+x86/
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.pch
+*.tlog
+*.lastbuildstate
+*.recipe
+*.log
+*.bsc
+*.sbr
+*.exp
+*.lib
+*.dll
+*.exe
+
+# 临时与系统文件
+*.aps
+*.clw
+*.dsp
+*.dsw
+*.opt
+UpgradeLog*
+_UpgradeReport_Files/
+*.plg
+*.tmp
+Thumbs.db
+Desktop.ini
