@@ -193,6 +193,7 @@ inline Result RefineHeadRegion(Result baseline, int width, int height)
     const int searchStart = firstRow + regionHeight / 4;
     const int searchEnd = firstRow + regionHeight * 4 / 5;
     int cutRow = -1;
+    int neckRow = -1;
     for (int y = searchStart; y + 2 <= searchEnd; ++y)
     {
         if (rowWidths[y] * 100 > headWidth * 65 ||
@@ -209,6 +210,7 @@ inline Result RefineHeadRegion(Result baseline, int width, int height)
             }
         if (reboundRow >= 0)
         {
+            neckRow = y;
             cutRow = rowWidths[y] * 100 <= headWidth * 45 ? y : reboundRow;
             break;
         }
@@ -216,12 +218,36 @@ inline Result RefineHeadRegion(Result baseline, int width, int height)
     if (cutRow < 0)
         return baseline;
 
+    int headLeft = width, headRight = -1;
+    for (int y = firstRow; y < neckRow; ++y)
+    {
+        if (rowWidths[y] * 100 < headWidth * 75)
+            continue;
+        for (int x = 0; x < width; ++x)
+            if (baseline.mask[y * width + x])
+            {
+                headLeft = std::min(headLeft, x);
+                headRight = std::max(headRight, x);
+            }
+    }
+    if (headRight < headLeft)
+    {
+        headLeft = 0;
+        headRight = width - 1;
+    }
+    else
+    {
+        const int margin = std::max(1, headWidth / 20);
+        headLeft = std::max(0, headLeft - margin);
+        headRight = std::min(width - 1, headRight + margin);
+    }
+
     int minX = width, maxX = -1, minY = height, maxY = -1, pixels = 0;
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x)
         {
             unsigned char& value = baseline.mask[y * width + x];
-            if (y >= cutRow)
+            if (y >= cutRow || x < headLeft || x > headRight)
                 value = 0;
             if (!value)
                 continue;

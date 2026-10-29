@@ -56,11 +56,18 @@ int main()
             u[y * width + x] = skin ? 100 : 0;
             v[y * width + x] = skin ? 145 : 0;
         }
+    for (int y = 64; y < 76; ++y)
+        for (int x = 90; x < 105; ++x)
+        {
+            u[y * width + x] = 100;
+            v[y * width + x] = 145;
+        }
     const FaceSegmentation::Result shallow =
         FaceSegmentation::RunRefined(u.data(), v.data(), width, height);
     if (shallow.left != 126 || shallow.top != 18 ||
-        shallow.width != 68 || shallow.height != 58 ||
+        shallow.width != 70 || shallow.height != 58 ||
         shallow.mask[70 * width + 80] != 255 ||
+        shallow.mask[70 * width + 103] != 0 ||
         shallow.mask[90 * width + 50] != 0)
     {
         std::fprintf(stderr, "unexpected shallow-neck box: %d %d %d %d\n",
