@@ -34,4 +34,10 @@
 
 解决方案同时保留 `Release | Win32` 和 `Template | Win32` 配置，三个配置均统一使用 `v145` 和 Windows SDK `10.0.26100.0`；其中 `Template | Win32` 在解决方案层统一映射到经过验证的 Release 配置。
 
-> 仓库只保存可复现的源代码和工程文件，不保存 `Debug/`、`.vs/`、`ipch/` 等本机生成内容。
+> 仓库保存源代码、工程文件和压缩后的迭代测试结果；不保存 `Debug/`、`.vs/`、`ipch/` 等本机生成内容。
+
+## 离线图片与视频测试
+
+单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。工具导出基线和精修的 mask、画框图、像素统计与算法耗时。
+
+视频使用 `tools/run_video_probe.ps1` 按每秒 2 帧抽样，结果保存在 `fig/iterations/改动名/`。每次改动使用新名字，已有目录不会被覆盖。首轮实拍复测及失败案例见 [参考算法借鉴与实拍视频复测](doc/参考算法借鉴与实拍视频复测.md)；运行命令见 [迭代结果说明](fig/iterations/README.md)。原始人像视频只在本机保留，不纳入 Git。
