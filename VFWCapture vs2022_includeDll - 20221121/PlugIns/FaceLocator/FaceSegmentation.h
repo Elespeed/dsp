@@ -1,4 +1,4 @@
-#ifndef FACE_SEGMENTATION_H
+﻿#ifndef FACE_SEGMENTATION_H
 #define FACE_SEGMENTATION_H
 
 #include <algorithm>
