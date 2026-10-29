@@ -422,6 +422,24 @@ inline Result RefineNeckRegion(Result current, int width, int height,
     if (!bestWidth && cutRow == last + 1)
         return current;
 
+    if (cutRow <= last)
+    {
+        // 嘴部亮度给出下巴初值；若近处肤色行宽突然收窄，则把切线移到收窄处下方。
+        const int searchFirst = std::max(first + 1, cutRow - 10);
+        const int searchLast = std::min(last, cutRow - 3);
+        const int earliestCut = cutRow - 6;
+        int adjustedCut = cutRow;
+        for (int y = searchFirst; y <= searchLast; ++y)
+        {
+            const int upperWidth = rowWidths[y - 1];
+            const int widthDrop = upperWidth - rowWidths[y];
+            if (upperWidth >= 20 && widthDrop >= 6 &&
+                widthDrop * 5 >= upperWidth)
+                adjustedCut = std::max(earliestCut, y + 3);
+        }
+        cutRow = adjustedCut;
+    }
+
     Result candidate = current;
     const int center = (faceLeft + faceRight) / 2;
     const int halfWidth = std::max(1, (faceRight - faceLeft) / 2);

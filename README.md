@@ -27,10 +27,10 @@
 ## 打开、编译与运行
 
 1. 打开 `VFWCAPTURE.sln`；
-2. 选择 `Debug | Win32`，执行“生成解决方案”；
+2. 选择 `Debug | Win32`，执行“生成解决方案”；`VFWCAPTURE` 已设置依赖 `FaceLocator`，后续修改分割源码再按 F5 时也会构建该插件；
 3. 将 `VFWCAPTURE` 设为启动项目；
 4. 使用 `F5` 调试运行，或使用 `Ctrl+F5` 直接运行；
-5. 程序启动后会从 `Debug/Plugin/` 加载插件，连接摄像头后再点击“开始”。
+5. 程序启动后会从 `Debug/Plugin/PB_FaceLocator.dll` 加载人脸定位插件，连接摄像头后再点击“开始”。若 VS 在解决方案打开期间提示文件已从外部修改，先重新加载解决方案，使构建依赖生效。重新构建插件前应先停止正在运行的程序，之后重新启动才能加载新 DLL。
 
 解决方案同时保留 `Release | Win32` 和 `Template | Win32` 配置，三个配置均统一使用 `v145` 和 Windows SDK `10.0.26100.0`；其中 `Template | Win32` 在解决方案层统一映射到经过验证的 Release 配置。
 
@@ -42,7 +42,7 @@
 
 视频使用 `tools/run_video_probe.ps1` 按每秒 2 帧抽样，结果保存在 `fig/iterations/改动名/`。每次改动使用新名字，已有目录不会被覆盖。首轮实拍复测及失败案例见 [参考算法借鉴与实拍视频复测](doc/参考算法借鉴与实拍视频复测.md)；运行命令见 [迭代结果说明](fig/iterations/README.md)。原始人像视频只在本机保留，不纳入 Git。
 
-最新视频的 45 帧当前版复测及 43 帧去脖子实验见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)。v1/v2 的纯几何裁剪曾误切下巴；**v4 黄色下巴弧线试用版**保存在分支 `codex/neck-removal-evaluation` 的提交 **`0bb020b`**，插件在该分支调用 v4。它是试用检查点，尚需其他光线和姿态的视频复测。
+最新视频的 45 帧当前版复测及 43 帧去脖子实验见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)。v1/v2 的纯几何裁剪曾误切下巴；**v4 黄色下巴弧线试用版**保存在分支 `codex/neck-removal-evaluation` 的提交 **`0bb020b`**，可作为回退检查点。当前分支已在 v4 基础上恢复 v5 行宽突变修正；仍需用真实摄像头验证不同光线和姿态。
 
 ### v4 预览文件
 
@@ -56,8 +56,8 @@
 | `comparison/`、`contact_*.png` | 单帧左右对照及整批总览；左为改动前，右为 v4 |
 | `results.csv`、`selection.csv`、`README.txt` | 框和像素统计、入选理由、该轮参数与来源说明 |
 
-本机的 `Release/Plugin/PB_FaceLocator.dll` 已更新为 v4 并通过插件接口测试。其他机器检出该提交后，需先构建 `Release | Win32`，再把 `PlugIns/FaceLocator/Release/FaceLocator.dll` 复制为 `Release/Plugin/PB_FaceLocator.dll` 才能在 Release 程序中试用；生成的 DLL 不纳入 Git。
+Release 配置的插件构建产物位于 `PlugIns/FaceLocator/Release/FaceLocator.dll`；若用 Release 程序试验，需将新构建的文件复制为 `Release/Plugin/PB_FaceLocator.dll`。本机此前的 Release DLL 是 v4，不能代表当前 v5 源码；生成的 DLL 不纳入 Git。
 
 ### v5 实验预览
 
-v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上试过行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。该提交保存的是实验结果，未保存当时的临时 v5 源码；当前分支源码与插件仍为 v4，不能直接重放出 v5 结果。
+v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，预览提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上加入行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。预览提交当时未保存临时源码，现已重新加入 `FaceSegmentation.h`；用最新视频的 43 个入选帧核对，裁剪框、像素数与预览数据全部一致。`Debug | Win32` 插件已在本机重新构建，并通过插件接口测试。

@@ -10,6 +10,9 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ImagePrepare", "PlugIns\ImagePrepare\ImagePrepare.vcxproj", "{0DF7EAF0-E9CF-4362-932B-35DD02E002E8}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "VFWCAPTURE", "VFWCAPTURE.vcxproj", "{70A83EF7-CC0F-4FAE-9A9A-5EA1C619FFE3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A8B87387-147D-482B-84F8-0680B7E1725C} = {A8B87387-147D-482B-84F8-0680B7E1725C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TraceObject", "PlugIns\TraceObject\TraceObject.vcxproj", "{9E727180-37F7-49D2-B89D-7C9030E4416A}"
 EndProject
