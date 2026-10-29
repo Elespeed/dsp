@@ -4,6 +4,7 @@
 #include "BufStruct.h"
 #include "ImageProc.h"
 #include "FaceSegmentation.h"
+#include "JawLandmarkBridge.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -114,8 +115,24 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
     const BYTE* u = bs->clrBmp_1d8 + yCount;
     const BYTE* v = u + uvCount;
     // 在 Y 平面写入二值图之前，先用原亮度定位下巴并裁掉下方肤色。
-    FaceSegmentation::Result face = FaceSegmentation::RunNeckRefined(
-        u, v, maskW, maskH, bs->clrBmp_1d8, w / 2);
+    FaceSegmentation::Result current = FaceSegmentation::RunRefined(
+        u, v, maskW, maskH);
+    FaceSegmentation::Result face = FaceSegmentation::RefineNeckRegion(
+        current, maskW, maskH, bs->clrBmp_1d8, w / 2);
+    FaceSegmentation::MaskPoint chin;
+    std::vector<FaceSegmentation::MaskPoint> oval;
+    bool landmarkApplied = false;
+    if (JawLandmarkBridge::Instance().Detect(AfxGetInstanceHandle(), w, h,
+                                              pYBits, pUBits, pVBits, chin, oval))
+    {
+        FaceSegmentation::Result jawFace;
+        if (FaceSegmentation::ApplyFaceOval(current, maskW, maskH,
+                                            chin, oval, jawFace))
+        {
+            face = jawFace;
+            landmarkApplied = true;
+        }
+    }
 
     memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
     // 仅在降采样图的 Y 平面写二值结果，保留 U/V 供后续插件使用。
@@ -139,7 +156,12 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
         // 框从 clrBmp_1d8 坐标换算到原始视频坐标。
         aRect original = { face.left * 2, face.top * 4,
                            face.width * 2, face.height * 4 };
-        DrawRectangle(pYBits, w, h, original, RGB(235, 16, 240), false);
+        DrawRectangle(pYBits, w, h, original,
+                      landmarkApplied ? RGB(150, 44, 21) : RGB(235, 16, 240),
+                      false);
+        if (landmarkApplied)
+            DrawCross(pYBits, w, h, chin.x * 4, chin.y * 4,
+                      4, RGB(150, 44, 21), false);
     }
 
     // 在画面右上角显示色度分辨率的二值 mask。
@@ -149,6 +171,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
 DLL_EXP void ON_PLUGINEXIT()
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());//模块状态切换
+    JawLandmarkBridge::Instance().Stop();
 	//theApp.dlg.DestroyWindow();
 }
 

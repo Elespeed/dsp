@@ -168,9 +168,14 @@
     <ResourceCompile Include="FaceLocator.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FaceSegmentation.h" />
+    <ClInclude Include="JawLandmarkBridge.h" />
     <ClInclude Include="FaceLocator.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="StdAfx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="jaw_landmark_worker.py" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />

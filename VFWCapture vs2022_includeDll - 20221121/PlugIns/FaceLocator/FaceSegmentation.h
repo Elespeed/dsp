@@ -27,6 +27,83 @@ struct Result
     int neckCurveRise = 0;
 };
 
+struct MaskPoint
+{
+    int x = 0;
+    int y = 0;
+};
+
+inline bool ApplyFaceOval(const Result& current, int width, int height,
+                          MaskPoint chin, const std::vector<MaskPoint>& oval,
+                          Result& output)
+{
+    if (width <= 0 || height <= 0 ||
+        current.mask.size() != static_cast<size_t>(width * height) ||
+        current.pixelCount <= 0 || oval.size() < 3)
+        return false;
+
+    // 关键点必须位于当前肤色框内，避免把衣服或背景中的误检当成人脸。
+    if (chin.x < current.left / 2 ||
+        chin.x >= (current.left + current.width) / 2 ||
+        chin.y < current.top || chin.y >= current.top + current.height)
+        return false;
+
+    Result candidate = current;
+    int minX = width, maxX = -1, minY = height, maxY = -1, pixels = 0;
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+        {
+            const int index = y * width + x;
+            if (!candidate.mask[index])
+                continue;
+            bool inside = false;
+            for (size_t i = 0, previous = oval.size() - 1;
+                 i < oval.size(); previous = i++)
+            {
+                const MaskPoint& a = oval[previous];
+                const MaskPoint& b = oval[i];
+                // 边界像素也保留，特别是下巴尖端所在的最下行。
+                const long long cross =
+                    static_cast<long long>(x - a.x) * (b.y - a.y) -
+                    static_cast<long long>(y - a.y) * (b.x - a.x);
+                if (!cross && x >= std::min(a.x, b.x) &&
+                    x <= std::max(a.x, b.x) &&
+                    y >= std::min(a.y, b.y) && y <= std::max(a.y, b.y))
+                {
+                    inside = true;
+                    break;
+                }
+                if ((a.y > y) == (b.y > y))
+                    continue;
+                const double boundary = a.x +
+                    static_cast<double>(y - a.y) * (b.x - a.x) / (b.y - a.y);
+                if (x < boundary)
+                    inside = !inside;
+            }
+            if (!inside)
+            {
+                candidate.mask[index] = 0;
+                continue;
+            }
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+            ++pixels;
+        }
+    // 留下的面部区域过小时沿用旧算法，避免关键点漂移造成误裁。
+    if (!pixels || pixels * 10 < current.pixelCount)
+        return false;
+    candidate.left = minX * 2;
+    candidate.top = minY;
+    candidate.width = (maxX - minX + 1) * 2;
+    candidate.height = maxY - minY + 1;
+    candidate.pixelCount = pixels * 2;
+    candidate.neckCutRow = -1;
+    output = candidate;
+    return true;
+}
+
 inline void Morph(const std::vector<unsigned char>& input,
                   std::vector<unsigned char>& output,
                   int width, int height, int radius, bool erode)

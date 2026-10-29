@@ -28,6 +28,12 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FaceSegmentation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="JawLandmarkBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="FaceLocator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -37,6 +43,11 @@
     <ClInclude Include="StdAfx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="jaw_landmark_worker.py">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
