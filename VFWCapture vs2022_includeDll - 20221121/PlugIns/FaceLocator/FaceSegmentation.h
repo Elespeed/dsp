@@ -280,6 +280,136 @@ inline Result RunRefined(const unsigned char* u, const unsigned char* v,
 {
     return RefineHeadRegion(RunBaseline(u, v, width, height), width, height);
 }
+
+// 去脖子实验函数；实拍样本仍存在误切下巴，插件暂不调用。
+inline Result RefineNeckRegion(Result current, int width, int height)
+{
+    if (current.pixelCount == 0 || width <= 0 || height <= 0 ||
+        current.mask.size() != static_cast<std::vector<unsigned char>::size_type>(width * height))
+        return current;
+
+    const int first = current.top;
+    const int last = current.top + current.height - 1;
+    if (last - first < 20)
+        return current;
+
+    // 先找肤色块最宽的一行，再在下方寻找与背景分开的面部横向区间。
+    int widestRow = first, widestCount = 0;
+    for (int y = first; y <= last; ++y)
+    {
+        int count = 0;
+        for (int x = 0; x < width; ++x)
+            count += current.mask[y * width + x] != 0;
+        if (count > widestCount)
+        {
+            widestCount = count;
+            widestRow = y;
+        }
+    }
+
+    int faceLeft = current.left / 2;
+    int faceRight = faceLeft + current.width / 2 - 1;
+    int bestWidth = 0, bestRow = first, neighborLeft = -1, neighborRight = -1;
+    for (int y = widestRow + 3; y <= last - 4; ++y)
+    {
+        struct Run { int left, right; };
+        std::vector<Run> runs;
+        for (int x = 0; x < width; )
+        {
+            if (!current.mask[y * width + x]) { ++x; continue; }
+            const int start = x;
+            while (x < width && current.mask[y * width + x]) ++x;
+            if (x - start >= 5)
+                runs.push_back({start, x - 1});
+        }
+        if (runs.size() < 2)
+            continue;
+        for (std::size_t i = 0; i < runs.size(); ++i)
+        {
+            const int runWidth = runs[i].right - runs[i].left + 1;
+            if (runWidth <= bestWidth)
+                continue;
+            bestWidth = runWidth;
+            bestRow = y;
+            faceLeft = runs[i].left;
+            faceRight = runs[i].right;
+            neighborLeft = i ? runs[i - 1].right : -1;
+            neighborRight = i + 1 < runs.size() ? runs[i + 1].left : -1;
+        }
+    }
+
+    if (bestWidth)
+    {
+        const int margin = std::max(2, bestWidth / 4);
+        faceLeft = std::max(0, faceLeft - margin);
+        faceRight = std::min(width - 1, faceRight + margin);
+        if (neighborLeft >= 0)
+            faceLeft = std::max(faceLeft, neighborLeft + 1);
+        if (neighborRight >= 0)
+            faceRight = std::min(faceRight, neighborRight - 1);
+    }
+
+    std::vector<int> rowWidths(height, 0);
+    int headWidth = bestWidth, headPeak = bestRow;
+    for (int y = first; y <= last; ++y)
+    {
+        for (int x = faceLeft; x <= faceRight; ++x)
+            rowWidths[y] += current.mask[y * width + x] != 0;
+        if (!bestWidth && rowWidths[y] > headWidth)
+        {
+            headWidth = rowWidths[y];
+            headPeak = y;
+        }
+    }
+    if (headWidth < 12)
+        return current;
+
+    // 只裁掉持续变窄的尾部；短暂变窄可能仍是下巴，需保留。
+    int cutRow = last + 1;
+    const int searchStart = headPeak + std::max(8, headWidth / 3);
+    for (int y = searchStart; y + 4 <= last; ++y)
+    {
+        if (rowWidths[y] * 100 > headWidth * 55 ||
+            rowWidths[y + 1] * 100 > headWidth * 55 ||
+            rowWidths[y + 2] * 100 > headWidth * 55)
+            continue;
+        cutRow = y;
+        break;
+    }
+    if (!bestWidth && cutRow == last + 1)
+        return current;
+
+    Result candidate = current;
+    int minX = width, maxX = -1, minY = height, maxY = -1, pixels = 0;
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+        {
+            unsigned char& value = candidate.mask[y * width + x];
+            if (y >= cutRow || x < faceLeft || x > faceRight)
+                value = 0;
+            if (!value)
+                continue;
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+            ++pixels;
+        }
+    if (!pixels || pixels * 2 < current.pixelCount / 3)
+        return current;
+    candidate.left = minX * 2;
+    candidate.top = minY;
+    candidate.width = (maxX - minX + 1) * 2;
+    candidate.height = maxY - minY + 1;
+    candidate.pixelCount = pixels * 2;
+    return candidate;
+}
+
+inline Result RunNeckRefined(const unsigned char* u, const unsigned char* v,
+                             int width, int height)
+{
+    return RefineNeckRegion(RunRefined(u, v, width, height), width, height);
+}
 }
 
 #endif

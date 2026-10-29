@@ -22,8 +22,8 @@ struct BmpImage
 
 struct ProbeResult
 {
-    FaceSegmentation::Result baseline, refined;
-    long long baselineUs = 0, refineUs = 0;
+    FaceSegmentation::Result baseline, refined, neck;
+    long long baselineUs = 0, refineUs = 0, neckUs = 0;
 };
 
 static std::uint16_t Read16(const std::vector<unsigned char>& b, std::size_t i)
@@ -93,11 +93,15 @@ static ProbeResult Probe(const BmpImage& image)
     result.baseline = FaceSegmentation::RunBaseline(u.data(), v.data(), mw, mh);
     const auto middle = std::chrono::steady_clock::now();
     result.refined = FaceSegmentation::RefineHeadRegion(result.baseline, mw, mh);
+    const auto neckStart = std::chrono::steady_clock::now();
+    result.neck = FaceSegmentation::RefineNeckRegion(result.refined, mw, mh);
     const auto end = std::chrono::steady_clock::now();
     result.baselineUs = std::chrono::duration_cast<std::chrono::microseconds>(
         middle - start).count();
     result.refineUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        end - middle).count();
+        neckStart - middle).count();
+    result.neckUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        end - neckStart).count();
     return result;
 }
 
@@ -151,15 +155,18 @@ static bool WriteResults(const fs::path& prefix, const BmpImage& image,
     const int mw = image.width / 4, mh = image.height / 4;
     return WriteMask(prefix.string() + "_baseline.pgm", result.baseline, mw, mh) &&
            WriteMask(prefix.string() + "_refined.pgm", result.refined, mw, mh) &&
+           WriteMask(prefix.string() + "_neck.pgm", result.neck, mw, mh) &&
            WriteOverlay(prefix.string() + "_baseline.bmp", image, result.baseline, false) &&
-           WriteOverlay(prefix.string() + "_refined.bmp", image, result.refined, true);
+           WriteOverlay(prefix.string() + "_refined.bmp", image, result.refined, true) &&
+           WriteOverlay(prefix.string() + "_neck.bmp", image, result.neck, true);
 }
 
 static void WriteCsvHeader(std::ostream& out)
 {
     out << "file,width,height,baseline_left,baseline_top,baseline_width,"
            "baseline_height,baseline_pixels,baseline_us,refined_left,"
-           "refined_top,refined_width,refined_height,refined_pixels,refine_us\n";
+           "refined_top,refined_width,refined_height,refined_pixels,refine_us,"
+           "neck_left,neck_top,neck_width,neck_height,neck_pixels,neck_us\n";
 }
 
 static void WriteCsvRow(std::ostream& out, const std::string& name,
@@ -167,11 +174,14 @@ static void WriteCsvRow(std::ostream& out, const std::string& name,
 {
     const auto& b = result.baseline;
     const auto& r = result.refined;
+    const auto& n = result.neck;
     out << '"' << name << "\"," << image.width << ',' << image.height << ','
         << b.left << ',' << b.top << ',' << b.width << ',' << b.height << ','
         << b.pixelCount << ',' << result.baselineUs << ','
         << r.left << ',' << r.top << ',' << r.width << ',' << r.height << ','
-        << r.pixelCount << ',' << result.refineUs << '\n';
+        << r.pixelCount << ',' << result.refineUs << ','
+        << n.left << ',' << n.top << ',' << n.width << ',' << n.height << ','
+        << n.pixelCount << ',' << result.neckUs << '\n';
 }
 
 int main(int argc, char** argv)
@@ -203,6 +213,9 @@ int main(int argc, char** argv)
         std::printf("refined:  %d %d %d %d pixels=%d time=%lldus\n",
             result.refined.left, result.refined.top, result.refined.width,
             result.refined.height, result.refined.pixelCount, result.refineUs);
+        std::printf("neck:     %d %d %d %d pixels=%d time=%lldus\n",
+            result.neck.left, result.neck.top, result.neck.width,
+            result.neck.height, result.neck.pixelCount, result.neckUs);
         return csv ? 0 : 2;
     }
     const fs::path inputDir(argv[2]), outputDir(argv[3]);
