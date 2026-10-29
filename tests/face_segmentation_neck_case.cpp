@@ -49,6 +49,24 @@ int main()
             refined.pixelCount);
         return 1;
     }
+    for (int y = 57; y < 76; ++y)
+        for (int x = 0; x < width; ++x)
+        {
+            const bool skin = x >= 70 && x < 90;
+            u[y * width + x] = skin ? 100 : 0;
+            v[y * width + x] = skin ? 145 : 0;
+        }
+    const FaceSegmentation::Result shallow =
+        FaceSegmentation::RunRefined(u.data(), v.data(), width, height);
+    if (shallow.left != 126 || shallow.top != 18 ||
+        shallow.width != 68 || shallow.height != 58 ||
+        shallow.mask[70 * width + 80] != 255 ||
+        shallow.mask[90 * width + 50] != 0)
+    {
+        std::fprintf(stderr, "unexpected shallow-neck box: %d %d %d %d\n",
+            shallow.left, shallow.top, shallow.width, shallow.height);
+        return 1;
+    }
     std::puts("Connected head-neck-shoulders refinement: PASS");
     return 0;
 }

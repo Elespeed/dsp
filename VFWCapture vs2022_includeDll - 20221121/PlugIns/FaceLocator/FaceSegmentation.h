@@ -200,12 +200,16 @@ inline Result RefineHeadRegion(Result baseline, int width, int height)
             rowWidths[y + 2] * 100 > headWidth * 65)
             continue;
 
-        int lowerWidth = 0;
+        int reboundRow = -1;
         for (int lower = y + 3; lower <= lastRow; ++lower)
-            lowerWidth = std::max(lowerWidth, rowWidths[lower]);
-        if (lowerWidth * 100 >= headWidth * 120)
+            if (rowWidths[lower] * 100 >= headWidth * 120)
+            {
+                reboundRow = lower;
+                break;
+            }
+        if (reboundRow >= 0)
         {
-            cutRow = y;
+            cutRow = rowWidths[y] * 100 <= headWidth * 45 ? y : reboundRow;
             break;
         }
     }
