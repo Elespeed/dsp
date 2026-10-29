@@ -1,0 +1,41 @@
+#include <cstdio>
+#include <vector>
+#include "FaceSegmentation.h"
+
+int main()
+{
+    const int width = 160, height = 120;
+    std::vector<unsigned char> u(width * height, 0);
+    std::vector<unsigned char> v(width * height, 0);
+    for (int y = 18; y < 57; ++y)
+        for (int x = 63; x < 97; ++x)
+        {
+            u[y * width + x] = 100;
+            v[y * width + x] = 145;
+        }
+    for (int y = 57; y < 76; ++y)
+        for (int x = 73; x < 87; ++x)
+        {
+            u[y * width + x] = 100;
+            v[y * width + x] = 145;
+        }
+    for (int y = 76; y < 102; ++y)
+        for (int x = 42; x < 118; ++x)
+        {
+            u[y * width + x] = 100;
+            v[y * width + x] = 145;
+        }
+
+    const FaceSegmentation::Result baseline =
+        FaceSegmentation::RunBaseline(u.data(), v.data(), width, height);
+    if (baseline.left != 84 || baseline.top != 18 ||
+        baseline.width != 152 || baseline.height != 84 ||
+        baseline.mask[90 * width + 50] != 255)
+    {
+        std::fprintf(stderr, "unexpected baseline box: %d %d %d %d\n",
+            baseline.left, baseline.top, baseline.width, baseline.height);
+        return 1;
+    }
+    std::puts("Connected head-neck-shoulders baseline: reproduced");
+    return 0;
+}
