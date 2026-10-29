@@ -88,6 +88,7 @@ CVFWCAPTUREDlg::CVFWCAPTUREDlg(CWnd* pParent /*=NULL*/)
 	m_sVideoFmt = _T("");
     pBuffer = NULL;
 	m_bDSPFormatSim = FALSE;
+    m_hCapture = NULL;
 	theDlg = this;
 }
 
@@ -239,126 +240,163 @@ HCURSOR CVFWCAPTUREDlg::OnQueryDragIcon()
 {
 	return (HCURSOR) m_hIcon;
 }
-void CVFWCAPTUREDlg::OnStart() 
+void CVFWCAPTUREDlg::OnStart()
 {
-	// TODO: Add your control notification handler code here
-	//	if( GetDlgItem(IDC_GRABFRAME)->IsWindowEnabled() )
-//	{
-//		capOverlay(m_hCapture,TRUE);
-//		GetDlgItem(IDC_RECORD)->EnableWindow(TRUE);
-//	}
-//	else
-//	{
-		CAPTUREPARMS m_CaptureParams;
-    //  创建"捕获窗" 
-		m_hCapture = capCreateCaptureWindow("cap",WS_EX_CONTROLPARENT|WS_CHILD|WS_VISIBLE,10,6,640,480,m_hWnd,0);
-	//	关联捕获窗和驱动程序
-		while(!capDriverConnect(m_hCapture,0));
-	//	capDriverConnect(m_hCapture,0);
-    //设置视频设备的属性
-		capCaptureGetSetup(m_hCapture,&m_CaptureParams,sizeof(m_CaptureParams));
-		m_CaptureParams.fYield = TRUE;
-		capCaptureSetSetup(m_hCapture,&m_CaptureParams,sizeof(m_CaptureParams));
-   //   打开预览
-		capOverlay(m_hCapture,IsDlgButtonChecked(IDC_OVERPLAY));
-   //   设置相应按钮为活动状态
-   		GetDlgItem(IDC_SAVEIMG)->EnableWindow(true);
-	   //	GetDlgItem(IDC_RECORD)->EnableWindow(TRUE);
-   //   禁止“开始”按钮
-	    GetDlgItem(IDC_START)->EnableWindow(false);
-   //  定义一个帧捕获回调函数
-		if( capSetCallbackOnFrame(m_hCapture,(LPVOID)VideoCallbackProc) )
-		 AddLogInfo("Success install capture callback!");
+    m_hCapture = capCreateCaptureWindow("cap", WS_CHILD | WS_VISIBLE,
+        10, 6, 640, 480, m_hWnd, 0);
+    if (!m_hCapture)
+    {
+        AddLogInfo("创建采集窗口失败");
+        return;
+    }
+    // 连接失败后允许重新点击“开始”，避免界面线程无限重试。
+    if (!capDriverConnect(m_hCapture, 0))
+    {
+        AddLogInfo("连接摄像头失败");
+        ::DestroyWindow(m_hCapture);
+        m_hCapture = NULL;
+        return;
+    }
 
-   // 获取视频参数
-        DWORD dwSize = capGetVideoFormatSize(m_hCapture);//视频参数大小
-		BYTE* pBuffer = new BYTE[dwSize];
-		capGetVideoFormat(m_hCapture,pBuffer,dwSize);
-	//
-		LPBITMAPINFO pbi = (LPBITMAPINFO)pBuffer;
-		nVideoW = pbi->bmiHeader.biWidth;
-		nVideoH = pbi->bmiHeader.biHeight;
-		dwFormat = pbi->bmiHeader.biCompression;
-	//
-		delete pBuffer;
-		m_nVideoWidth = nVideoW;
-		m_nVideoHeight = nVideoH;
-		m_sVideoFmt.Format("0x%x",dwFormat);   
-	//设置33ms定时器
-	    SetTimer(1,33,NULL);
-	//刷新窗口
-		UpdateData(false);
+    DWORD size = capGetVideoFormatSize(m_hCapture);
+    if (size < sizeof(BITMAPINFOHEADER))
+    {
+        AddLogInfo("摄像头格式大小无效");
+        capDriverDisconnect(m_hCapture);
+        ::DestroyWindow(m_hCapture);
+        m_hCapture = NULL;
+        return;
+    }
+    BYTE* bytes = new BYTE[size];
+    if (!capGetVideoFormat(m_hCapture, bytes, size))
+    {
+        AddLogInfo("读取摄像头格式失败");
+        delete[] bytes;
+        capDriverDisconnect(m_hCapture);
+        ::DestroyWindow(m_hCapture);
+        m_hCapture = NULL;
+        return;
+    }
+    BITMAPINFOHEADER* format = (BITMAPINFOHEADER*)bytes;
+    if (format->biCompression != YUV2 &&
+        !(format->biCompression == BI_RGB && format->biBitCount == 24))
+    {
+        // 常见摄像头默认 MJPG，尝试协商算法可处理的原始格式。
+        const int widths[4] = { 640, 640, format->biWidth, format->biWidth };
+        const int heights[4] = { 480, 480, abs(format->biHeight), abs(format->biHeight) };
+        const DWORD codecs[4] = { YUV2, BI_RGB, YUV2, BI_RGB };
+        const WORD depths[4] = { 16, 24, 16, 24 };
+        for (int i = 0; i < 4; ++i)
+        {
+            BITMAPINFOHEADER candidate = *format;
+            candidate.biWidth = widths[i];
+            candidate.biHeight = heights[i];
+            candidate.biCompression = codecs[i];
+            candidate.biBitCount = depths[i];
+            candidate.biPlanes = 1;
+            candidate.biSizeImage = candidate.biWidth * candidate.biHeight * depths[i] / 8;
+            if (capSetVideoFormat(m_hCapture, &candidate, sizeof(candidate)))
+            {
+                capGetVideoFormat(m_hCapture, bytes, size);
+                break;
+            }
+        }
+    }
+    nVideoW = format->biWidth;
+    nVideoH = abs(format->biHeight);
+    dwFormat = format->biCompression;
+    WORD depth = format->biBitCount;
+    delete[] bytes;
+    if (nVideoW <= 0 || nVideoH <= 0 || nVideoW % 16 != 0 ||
+        nVideoH % 4 != 0 ||
+        (dwFormat != YUV2 && !(dwFormat == BI_RGB && depth == 24)))
+    {
+        AddLogInfo("不支持的视频格式：0x%x，%dx%d，%d 位；请选择 YUY2 或 RGB24",
+            dwFormat, nVideoW, nVideoH, depth);
+        capDriverDisconnect(m_hCapture);
+        ::DestroyWindow(m_hCapture);
+        m_hCapture = NULL;
+        return;
+    }
+
+    CAPTUREPARMS setup = {};
+    if (capCaptureGetSetup(m_hCapture, &setup, sizeof(setup)))
+    {
+        setup.fYield = TRUE;
+        capCaptureSetSetup(m_hCapture, &setup, sizeof(setup));
+    }
+    capOverlay(m_hCapture, IsDlgButtonChecked(IDC_OVERPLAY));
+    if (!capSetCallbackOnFrame(m_hCapture, (LPVOID)VideoCallbackProc))
+    {
+        AddLogInfo("安装帧回调失败");
+        capDriverDisconnect(m_hCapture);
+        ::DestroyWindow(m_hCapture);
+        m_hCapture = NULL;
+        return;
+    }
+    m_nVideoWidth = nVideoW;
+    m_nVideoHeight = nVideoH;
+    m_sVideoFmt.Format("0x%x", dwFormat);
+    UpdateData(FALSE);
+    GetDlgItem(IDC_SAVEIMG)->EnableWindow(TRUE);
+    GetDlgItem(IDC_START)->EnableWindow(FALSE);
+    SetTimer(1, 33, NULL);
+    AddLogInfo("摄像头已连接：%dx%d，格式 0x%x", nVideoW, nVideoH, dwFormat);
 }
 void  CVFWCAPTUREDlg::OnTimer(UINT nIDEvent) 
 {
 	// TODO: Add your message handler code here and/or call default
 	//抓取一帧图像数据,与capGrabFrame相比,它不会停止预览模式和重叠
- 	capGrabFrameNoStop(m_hCapture);
+    if (nIDEvent == 1 && m_hCapture)
+        capGrabFrameNoStop(m_hCapture);
 	CDialog::OnTimer(nIDEvent);
 }
 
 
 LRESULT CALLBACK CVFWCAPTUREDlg::VideoCallbackProc(HWND hWnd, LPVOID lpVHdr)
 {
-	 LPVIDEOHDR pVHdr = (LPVIDEOHDR)lpVHdr;
-     //创建存储YUV2平面格式的破空间
-     BYTE* pY = new BYTE[nVideoW*nVideoH*2];
-	 BYTE* pU = pY+nVideoW*nVideoH;
-	 BYTE* pV = pU+nVideoW*nVideoH/2;
-				
-	if( pVHdr )
-	{
-		if (dwFormat== YUV2  || dwFormat==RGB24)
-        {
-	     if( !pImgProcBuf ) 
-						{
-						pImgProcBuf = new BYTE[nVideoW*nVideoH*4];
-						if( !pImgProcBuf )	return (LRESULT)FALSE;
-						((BUF_STRUCT*)pImgProcBuf)->bNotInited = true;//设置初始化标记
-						}
-			//转换到YUV2平面格式
-			if	 (dwFormat== YUV2)
-			theDlg->SplitYUVData(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
-            if	 (dwFormat== RGB24)
-            theDlg->RGBtoYUV(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
-		}
-		else
-        {
-		theDlg->AddLogInfo("未知的视频格式---%d,frame_size=%d,video_size=%d",dwFormat,pVHdr->dwBufferLength,nVideoW*nVideoH);
-					return FALSE;
-		}
- //
-			
-					//找出最后有效插件
-			        int theLast=-1;
-					for(int i=0;i<theDlg->nPlugInNum;i++)
-					{
-						theDlg->AllPlugIns[i].OnPlugInBeLast(false);
-						//strncmp 字符串s1与s2的前size个字符相同，函数返回值为0
-						if( theDlg->AllPlugIns[i].Enabled() && strncmp(theDlg->AllPlugIns[i].sName,"PZ_FinalProc.dll",16)!=0 )
-							{
-							theLast = i;
-							}
-					}
-					if( theLast>=0 )	theDlg->AllPlugIns[theLast].OnPlugInBeLast(true);
-					//依次调用所有插件处理
-					for( int i=0;i<theDlg->nPlugInNum;i++)
-					{
-						if( theDlg->AllPlugIns[i].Enabled() )
-							theDlg->AllPlugIns[i].OnPlugInRun(nVideoW,nVideoH,pY,pU,pV,pImgProcBuf);
-					}
-					//处理完毕的图像数据转换回来显示
-                if	 (dwFormat== YUV2)
-					theDlg->CombineYUVData(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
-                if	 (dwFormat== RGB24)
-                theDlg->YUVtoRGB(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
-			
-	
-	}	
-	delete pY;
-    return (LRESULT) TRUE ;
-}
+    LPVIDEOHDR frame = (LPVIDEOHDR)lpVHdr;
+    const int pixels = nVideoW * nVideoH;
+    if (!frame || !frame->lpData || pixels <= 0)
+        return FALSE;
+    const DWORD required = (DWORD)(pixels * (dwFormat == YUV2 ? 2 : 3));
+    if (frame->dwBytesUsed < required)
+        return FALSE;
 
+    BYTE* pY = new BYTE[pixels * 2];
+    BYTE* pU = pY + pixels;
+    BYTE* pV = pU + pixels / 2;
+    if (!pImgProcBuf)
+    {
+        pImgProcBuf = new BYTE[pixels * 4];
+        ((BUF_STRUCT*)pImgProcBuf)->bNotInited = true;
+    }
+    if (dwFormat == YUV2)
+        theDlg->SplitYUVData(nVideoW, nVideoH, frame->lpData, pY, pU, pV);
+    else
+        theDlg->RGBtoYUV(nVideoW, nVideoH, frame->lpData, pY, pU, pV);
+
+    int last = -1;
+    for (int i = 0; i < theDlg->nPlugInNum; ++i)
+    {
+        theDlg->AllPlugIns[i].OnPlugInBeLast(false);
+        if (theDlg->AllPlugIns[i].Enabled() &&
+            strncmp(theDlg->AllPlugIns[i].sName, "PZ_FinalProc.dll", 16) != 0)
+            last = i;
+    }
+    if (last >= 0)
+        theDlg->AllPlugIns[last].OnPlugInBeLast(true);
+    for (int i = 0; i < theDlg->nPlugInNum; ++i)
+        if (theDlg->AllPlugIns[i].Enabled())
+            theDlg->AllPlugIns[i].OnPlugInRun(nVideoW, nVideoH, pY, pU, pV, pImgProcBuf);
+
+    if (dwFormat == YUV2)
+        theDlg->CombineYUVData(nVideoW, nVideoH, frame->lpData, pY, pU, pV);
+    else
+        theDlg->YUVtoRGB(nVideoW, nVideoH, frame->lpData, pY, pU, pV);
+    delete[] pY;
+    return TRUE;
+}
 //
 void CVFWCAPTUREDlg::AddLogInfo(LPCTSTR sMessage, ...)
 {
@@ -392,7 +430,7 @@ void CVFWCAPTUREDlg::OnVfsetup()
     capDlgVideoFormat(m_hCapture);
 	BYTE* pTemp = pImgProcBuf;
 	pImgProcBuf = NULL;
-	delete pTemp;
+	delete[] pTemp;
 }
 void CVFWCAPTUREDlg::OnVfwsetup() 
 {
@@ -400,7 +438,7 @@ void CVFWCAPTUREDlg::OnVfwsetup()
 	capDlgVideoSource(m_hCapture);
 	BYTE* pTemp = pImgProcBuf;
 	pImgProcBuf = NULL;
-	delete pTemp;
+	delete[] pTemp;
 }
 void CVFWCAPTUREDlg::OnDspformat() 
 {
@@ -443,8 +481,17 @@ void CVFWCAPTUREDlg::OnActiveall()
 //
 BOOL CVFWCAPTUREDlg::DestroyWindow() 
 {	// TODO: Add your specialized code here and/or call the base class
-	capDriverDisconnect(m_hCapture);
-	return CDialog::DestroyWindow();
+    KillTimer(1);
+    if (m_hCapture)
+    {
+        capSetCallbackOnFrame(m_hCapture, NULL);
+        capDriverDisconnect(m_hCapture);
+        ::DestroyWindow(m_hCapture);
+        m_hCapture = NULL;
+    }
+    delete[] pImgProcBuf;
+    pImgProcBuf = NULL;
+    return CDialog::DestroyWindow();
 }
 //将YUV422视频数据格式（按象素YUYVYUYV...）转换为YUV422平面图片格式(按Y-U-V存放)
 void CVFWCAPTUREDlg::SplitYUVData(
