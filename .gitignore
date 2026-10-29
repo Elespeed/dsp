@@ -44,3 +44,7 @@ _UpgradeReport_Files/
 *.tmp
 Thumbs.db
 Desktop.ini
+
+# 工作区根目录中的未引用备用文件
+/ImageProc.cpp
+/ImageProc.h
