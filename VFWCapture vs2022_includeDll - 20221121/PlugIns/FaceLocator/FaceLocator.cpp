@@ -114,7 +114,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
     const BYTE* u = bs->clrBmp_1d8 + yCount;
     const BYTE* v = u + uvCount;
     FaceSegmentation::Result face =
-        FaceSegmentation::RunBaseline(u, v, maskW, maskH);
+        FaceSegmentation::RunRefined(u, v, maskW, maskH);
 
     memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
     // 仅在降采样图的 Y 平面写二值结果，保留 U/V 供后续插件使用。

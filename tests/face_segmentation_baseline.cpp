@@ -47,6 +47,12 @@ int main()
             if ((face.mask[y * width + x] != 0) != expected)
                 return 1;
         }
+    const FaceSegmentation::Result refined =
+        FaceSegmentation::RunRefined(u.data(), v.data(), width, height);
+    if (refined.left != face.left || refined.top != face.top ||
+        refined.width != face.width || refined.height != face.height ||
+        refined.pixelCount != face.pixelCount || refined.mask != face.mask)
+        return 1;
     std::puts("FaceSegmentation baseline: PASS");
     return 0;
 }

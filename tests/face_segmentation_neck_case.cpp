@@ -36,6 +36,19 @@ int main()
             baseline.left, baseline.top, baseline.width, baseline.height);
         return 1;
     }
-    std::puts("Connected head-neck-shoulders baseline: reproduced");
+    const FaceSegmentation::Result refined =
+        FaceSegmentation::RunRefined(u.data(), v.data(), width, height);
+    if (refined.left != 126 || refined.top != 18 ||
+        refined.width != 68 || refined.height != 39 ||
+        refined.pixelCount != 2652 ||
+        refined.mask[90 * width + 50] != 0 ||
+        refined.mask[35 * width + 80] != 255)
+    {
+        std::fprintf(stderr, "unexpected refined box/count: %d %d %d %d %d\n",
+            refined.left, refined.top, refined.width, refined.height,
+            refined.pixelCount);
+        return 1;
+    }
+    std::puts("Connected head-neck-shoulders refinement: PASS");
     return 0;
 }

@@ -164,6 +164,84 @@ inline Result RunBaseline(const unsigned char* u, const unsigned char* v,
     result.pixelCount = face.count * 2;
     return result;
 }
+
+inline Result RefineHeadRegion(Result baseline, int width, int height)
+{
+    if (baseline.pixelCount == 0 || width <= 0 || height <= 0 ||
+        baseline.mask.size() != static_cast<std::vector<unsigned char>::size_type>(width * height))
+        return baseline;
+
+    const int firstRow = baseline.top;
+    const int lastRow = baseline.top + baseline.height - 1;
+    const int regionHeight = baseline.height;
+    if (regionHeight < 20)
+        return baseline;
+
+    std::vector<int> rowWidths(height, 0);
+    for (int y = firstRow; y <= lastRow; ++y)
+        for (int x = 0; x < width; ++x)
+            if (baseline.mask[y * width + x])
+                ++rowWidths[y];
+
+    const int upperEnd = firstRow + regionHeight / 2;
+    int headWidth = 0;
+    for (int y = firstRow; y < upperEnd; ++y)
+        headWidth = std::max(headWidth, rowWidths[y]);
+    if (headWidth < 12)
+        return baseline;
+
+    const int searchStart = firstRow + regionHeight / 4;
+    const int searchEnd = firstRow + regionHeight * 4 / 5;
+    int cutRow = -1;
+    for (int y = searchStart; y + 2 <= searchEnd; ++y)
+    {
+        if (rowWidths[y] * 100 > headWidth * 65 ||
+            rowWidths[y + 1] * 100 > headWidth * 65 ||
+            rowWidths[y + 2] * 100 > headWidth * 65)
+            continue;
+
+        int lowerWidth = 0;
+        for (int lower = y + 3; lower <= lastRow; ++lower)
+            lowerWidth = std::max(lowerWidth, rowWidths[lower]);
+        if (lowerWidth * 100 >= headWidth * 120)
+        {
+            cutRow = y;
+            break;
+        }
+    }
+    if (cutRow < 0)
+        return baseline;
+
+    int minX = width, maxX = -1, minY = height, maxY = -1, pixels = 0;
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+        {
+            unsigned char& value = baseline.mask[y * width + x];
+            if (y >= cutRow)
+                value = 0;
+            if (!value)
+                continue;
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+            ++pixels;
+        }
+    if (!pixels)
+        return baseline;
+    baseline.left = minX * 2;
+    baseline.top = minY;
+    baseline.width = (maxX - minX + 1) * 2;
+    baseline.height = maxY - minY + 1;
+    baseline.pixelCount = pixels * 2;
+    return baseline;
+}
+
+inline Result RunRefined(const unsigned char* u, const unsigned char* v,
+                         int width, int height)
+{
+    return RefineHeadRegion(RunBaseline(u, v, width, height), width, height);
+}
 }
 
 #endif
