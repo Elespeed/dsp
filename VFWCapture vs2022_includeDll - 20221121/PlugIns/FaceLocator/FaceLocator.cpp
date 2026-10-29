@@ -3,6 +3,7 @@
 #include "FaceLocator.h"
 #include "BufStruct.h"
 #include "ImageProc.h"
+#include "FaceSegmentation.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -90,19 +91,60 @@ DLL_EXP int ON_PLUGINCTRL(int nMode,void* pParameter)
 /****************************************************************************************/
 
 
-DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYTE* pBuffer)
+DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
+                          BYTE* pVBits, BYTE* pBuffer)
 {
-//pYBits 大小为w*h
-//pUBits 和 pVBits 的大小为 w*h/2
-//pBuffer 的大小为 w*h*4
-//下面算法都基于一个假设，即w是16的倍数
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+    if (!pBuffer || !pYBits || w <= 0 || h <= 0 ||
+        w % 16 != 0 || h % 4 != 0)
+        return;
 
-	AFX_MANAGE_STATE(AfxGetStaticModuleState());//模块状态切换
-	
-      //请编写相应处理程序
+    BUF_STRUCT* bs = (BUF_STRUCT*)pBuffer;
+    if (bs->bNotInited || bs->W != w || bs->H != h ||
+        !bs->clrBmp_1d8 || !bs->TempImage1d8)
+        return;
 
+    bs->rcnFace.left = bs->rcnFace.top = 0;
+    bs->rcnFace.width = bs->rcnFace.height = 0;
+    bs->nFacePixelNum = 0;
+    const int maskW = w / 4;
+    const int maskH = h / 4;
+    const int yCount = (w / 2) * maskH;
+    const int uvCount = maskW * maskH;
+    const BYTE* u = bs->clrBmp_1d8 + yCount;
+    const BYTE* v = u + uvCount;
+    FaceSegmentation::Result face =
+        FaceSegmentation::RunBaseline(u, v, maskW, maskH);
+
+    memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
+    // 仅在降采样图的 Y 平面写二值结果，保留 U/V 供后续插件使用。
+    BYTE* reducedY = bs->clrBmp_1d8;
+    for (int y = 0; y < maskH; ++y)
+        for (int x = 0; x < maskW; ++x)
+        {
+            const BYTE value = face.mask[y * maskW + x];
+            reducedY[y * (w / 2) + x * 2] = value;
+            reducedY[y * (w / 2) + x * 2 + 1] = value;
+        }
+
+    if (face.pixelCount > 0)
+    {
+        bs->rcnFace.left = face.left;
+        bs->rcnFace.top = face.top;
+        bs->rcnFace.width = face.width;
+        bs->rcnFace.height = face.height;
+        bs->nFacePixelNum = face.pixelCount;
+
+        // 框从 clrBmp_1d8 坐标换算到原始视频坐标。
+        aRect original = { face.left * 2, face.top * 4,
+                           face.width * 2, face.height * 4 };
+        DrawRectangle(pYBits, w, h, original, RGB(235, 16, 240), false);
+    }
+
+    // 在画面右上角显示色度分辨率的二值 mask。
+    CopyToRect(bs->TempImage1d8, pYBits, maskW, maskH,
+               w, h, w - maskW, 0, true);
 }
-
 DLL_EXP void ON_PLUGINEXIT()
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());//模块状态切换
