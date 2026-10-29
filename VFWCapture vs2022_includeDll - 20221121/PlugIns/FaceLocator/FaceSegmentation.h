@@ -27,7 +27,27 @@ inline void Morph(const std::vector<unsigned char>& input,
                   std::vector<unsigned char>& output,
                   int width, int height, int radius, bool erode)
 {
+    // 方形结构元素拆成水平、垂直两次扫描，边界仍按黑色像素处理。
+    std::vector<unsigned char> horizontal(input.size(), erode ? 255 : 0);
     output.assign(input.size(), erode ? 255 : 0);
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+        {
+            bool hit = erode;
+            for (int dx = -radius; dx <= radius; ++dx)
+            {
+                const int xx = x + dx;
+                const bool value = xx >= 0 && xx < width &&
+                    input[y * width + xx] != 0;
+                if (hit != value)
+                {
+                    hit = value;
+                    break;
+                }
+            }
+            horizontal[y * width + x] = hit ? 255 : 0;
+        }
+
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x)
         {
@@ -35,25 +55,13 @@ inline void Morph(const std::vector<unsigned char>& input,
             for (int dy = -radius; dy <= radius; ++dy)
             {
                 const int yy = y + dy;
-                for (int dx = -radius; dx <= radius; ++dx)
+                const bool value = yy >= 0 && yy < height &&
+                    horizontal[yy * width + x] != 0;
+                if (hit != value)
                 {
-                    const int xx = x + dx;
-                    const bool value = yy >= 0 && yy < height &&
-                        xx >= 0 && xx < width &&
-                        input[yy * width + xx] != 0;
-                    if (erode && !value)
-                    {
-                        hit = false;
-                        break;
-                    }
-                    if (!erode && value)
-                    {
-                        hit = true;
-                        break;
-                    }
-                }
-                if (hit != erode)
+                    hit = value;
                     break;
+                }
             }
             output[y * width + x] = hit ? 255 : 0;
         }
