@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -67,6 +68,36 @@ int main(int argc, char** argv)
             if ((bs->TempImage1d8[row * (w / 4) + col] != 0) != expected)
                 return 1;
         }
+
+    // 再用头颈肩连通样本确认 DLL 实际采用亮度辅助裁剪。
+    std::fill(y, y + pixels, 150);
+    std::memset(u, 0, pixels);
+    auto fillSkin = [&](int left, int top, int right, int bottom)
+    {
+        for (int row = top; row < bottom; ++row)
+            for (int col = left; col < right; ++col)
+            {
+                const int index = (row * 4) * (w / 2) + col * 2;
+                u[index] = 100;
+                v[index] = 145;
+            }
+    };
+    fillSkin(63, 18, 97, 57);
+    fillSkin(71, 57, 88, 76);
+    fillSkin(42, 76, 118, 102);
+    std::fill(y + 42 * 4 * w, y + (42 * 4 + 1) * w, 90);
+    std::fill(shared.begin(), shared.end(), 0);
+    ((BUF_STRUCT*)shared.data())->bNotInited = true;
+    runPrepare(w, h, y, u, v, shared.data());
+    bs = (BUF_STRUCT*)shared.data();
+    std::memcpy(originalUV.data(), bs->clrBmp_1d8 + yCount, uvCount * 2);
+    runLocate(w, h, y, u, v, shared.data());
+    if (!bs->TempImage1d8[45 * (w / 4) + 80] ||
+        bs->TempImage1d8[68 * (w / 4) + 80] ||
+        bs->rcnFace.height >= 58 ||
+        std::memcmp(originalUV.data(), bs->clrBmp_1d8 + yCount,
+                    uvCount * 2) != 0)
+        return 1;
     std::puts("FaceLocator plugin contract: PASS");
     FreeLibrary(locate);
     FreeLibrary(prepare);

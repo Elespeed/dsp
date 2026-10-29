@@ -113,8 +113,9 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
     const int uvCount = maskW * maskH;
     const BYTE* u = bs->clrBmp_1d8 + yCount;
     const BYTE* v = u + uvCount;
-    FaceSegmentation::Result face =
-        FaceSegmentation::RunRefined(u, v, maskW, maskH);
+    // 在 Y 平面写入二值图之前，先用原亮度定位下巴并裁掉下方肤色。
+    FaceSegmentation::Result face = FaceSegmentation::RunNeckRefined(
+        u, v, maskW, maskH, bs->clrBmp_1d8, w / 2);
 
     memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
     // 仅在降采样图的 Y 平面写二值结果，保留 U/V 供后续插件使用。

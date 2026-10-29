@@ -21,6 +21,10 @@ struct Result
     int width = 0;
     int height = 0;
     int pixelCount = 0;
+    int neckCutRow = -1;
+    int neckFaceLeft = 0;
+    int neckFaceRight = 0;
+    int neckCurveRise = 0;
 };
 
 inline void Morph(const std::vector<unsigned char>& input,
@@ -281,10 +285,12 @@ inline Result RunRefined(const unsigned char* u, const unsigned char* v,
     return RefineHeadRegion(RunBaseline(u, v, width, height), width, height);
 }
 
-// 去脖子实验函数；实拍样本仍存在误切下巴，插件暂不调用。
-inline Result RefineNeckRegion(Result current, int width, int height)
+// 根据原图亮度估计下巴位置，并清除其下方的肤色区域。
+inline Result RefineNeckRegion(Result current, int width, int height,
+                               const unsigned char* luma, int lumaStride)
 {
     if (current.pixelCount == 0 || width <= 0 || height <= 0 ||
+        !luma || lumaStride < width * 2 ||
         current.mask.size() != static_cast<std::vector<unsigned char>::size_type>(width * height))
         return current;
 
@@ -309,7 +315,7 @@ inline Result RefineNeckRegion(Result current, int width, int height)
 
     int faceLeft = current.left / 2;
     int faceRight = faceLeft + current.width / 2 - 1;
-    int bestWidth = 0, bestRow = first, neighborLeft = -1, neighborRight = -1;
+    int bestWidth = 0, neighborLeft = -1, neighborRight = -1;
     for (int y = widestRow + 3; y <= last - 4; ++y)
     {
         struct Run { int left, right; };
@@ -330,7 +336,6 @@ inline Result RefineNeckRegion(Result current, int width, int height)
             if (runWidth <= bestWidth)
                 continue;
             bestWidth = runWidth;
-            bestRow = y;
             faceLeft = runs[i].left;
             faceRight = runs[i].right;
             neighborLeft = i ? runs[i - 1].right : -1;
@@ -350,42 +355,85 @@ inline Result RefineNeckRegion(Result current, int width, int height)
     }
 
     std::vector<int> rowWidths(height, 0);
-    int headWidth = bestWidth, headPeak = bestRow;
+    int headWidth = bestWidth;
     for (int y = first; y <= last; ++y)
     {
         for (int x = faceLeft; x <= faceRight; ++x)
             rowWidths[y] += current.mask[y * width + x] != 0;
         if (!bestWidth && rowWidths[y] > headWidth)
-        {
             headWidth = rowWidths[y];
-            headPeak = y;
-        }
     }
     if (headWidth < 12)
         return current;
 
-    // 只裁掉持续变窄的尾部；短暂变窄可能仍是下巴，需保留。
     int cutRow = last + 1;
-    const int searchStart = headPeak + std::max(8, headWidth / 3);
-    for (int y = searchStart; y + 4 <= last; ++y)
     {
-        if (rowWidths[y] * 100 > headWidth * 55 ||
-            rowWidths[y + 1] * 100 > headWidth * 55 ||
-            rowWidths[y + 2] * 100 > headWidth * 55)
-            continue;
-        cutRow = y;
-        break;
+        // 在脸的中央窄带寻找嘴部的亮度谷值，再按上半脸距离估计下巴。
+        std::vector<int> smoothWidths = rowWidths;
+        for (int y = first + 1; y < last; ++y)
+            smoothWidths[y] = (rowWidths[y - 1] + 2 * rowWidths[y] +
+                               rowWidths[y + 1] + 2) / 4;
+        const int peakWidth = *std::max_element(smoothWidths.begin() + first,
+                                                smoothWidths.begin() + last + 1);
+        int faceTop = -1;
+        for (int y = first; y + 2 <= last; ++y)
+            if (smoothWidths[y] * 2 >= peakWidth &&
+                smoothWidths[y + 1] * 2 >= peakWidth &&
+                smoothWidths[y + 2] * 2 >= peakWidth)
+            {
+                faceTop = y;
+                break;
+            }
+        if (faceTop >= 0)
+        {
+            const int low = faceTop + (peakWidth * 2 + 2) / 5;
+            const int high = std::min(last, faceTop + (peakWidth * 9 + 5) / 10);
+            const int center = (faceLeft + faceRight) / 2;
+            const int span = std::max(2, (faceRight - faceLeft) / 6);
+            std::vector<int> brightness;
+            int mouthRow = -1, mouthValue = 256;
+            for (int y = low; y <= high; ++y)
+            {
+                int sum = 0;
+                const int sampleLeft = std::max(0, center - span);
+                const int sampleRight = std::min(width - 1, center + span);
+                for (int x = sampleLeft; x <= sampleRight; ++x)
+                    sum += luma[y * lumaStride + x * 2];
+                const int value = sum / (sampleRight - sampleLeft + 1);
+                brightness.push_back(value);
+                if (value < mouthValue)
+                {
+                    mouthValue = value;
+                    mouthRow = y;
+                }
+            }
+            if (!brightness.empty())
+            {
+                std::sort(brightness.begin(), brightness.end());
+                const int median = brightness[brightness.size() / 2];
+                if (median - mouthValue >= 12)
+                {
+                    cutRow = std::min(last + 1,
+                        mouthRow + (3 * (mouthRow - faceTop) + 2) / 5 + 3);
+                }
+            }
+        }
     }
     if (!bestWidth && cutRow == last + 1)
         return current;
 
     Result candidate = current;
+    const int center = (faceLeft + faceRight) / 2;
+    const int halfWidth = std::max(1, (faceRight - faceLeft) / 2);
+    const int curveRise = cutRow <= last ? std::max(2, headWidth / 6) : 0;
     int minX = width, maxX = -1, minY = height, maxY = -1, pixels = 0;
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x)
         {
             unsigned char& value = candidate.mask[y * width + x];
-            if (y >= cutRow || x < faceLeft || x > faceRight)
+            const int dx = x - center;
+            const int lift = curveRise * dx * dx / (halfWidth * halfWidth);
+            if (y >= cutRow - lift || x < faceLeft || x > faceRight)
                 value = 0;
             if (!value)
                 continue;
@@ -402,13 +450,22 @@ inline Result RefineNeckRegion(Result current, int width, int height)
     candidate.width = (maxX - minX + 1) * 2;
     candidate.height = maxY - minY + 1;
     candidate.pixelCount = pixels * 2;
+    if (cutRow <= last)
+    {
+        candidate.neckCutRow = cutRow;
+        candidate.neckFaceLeft = faceLeft;
+        candidate.neckFaceRight = faceRight;
+        candidate.neckCurveRise = curveRise;
+    }
     return candidate;
 }
 
 inline Result RunNeckRefined(const unsigned char* u, const unsigned char* v,
-                             int width, int height)
+                             int width, int height,
+                             const unsigned char* luma, int lumaStride)
 {
-    return RefineNeckRegion(RunRefined(u, v, width, height), width, height);
+    return RefineNeckRegion(RunRefined(u, v, width, height), width, height,
+                            luma, lumaStride);
 }
 }
 

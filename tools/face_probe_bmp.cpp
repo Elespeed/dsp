@@ -75,6 +75,7 @@ static ProbeResult Probe(const BmpImage& image)
 {
     const int mw = image.width / 4, mh = image.height / 4;
     std::vector<unsigned char> u(mw * mh), v(mw * mh);
+    std::vector<unsigned char> luma((image.width / 2) * mh);
     for (int y = 0; y < mh; ++y)
         for (int x = 0; x < mw; ++x)
         {
@@ -83,6 +84,11 @@ static ProbeResult Probe(const BmpImage& image)
             const std::size_t i = static_cast<std::size_t>(image.offset +
                 image.stride * bmpY + static_cast<std::uint64_t>(x * 4) * 3);
             const int b = image.bytes[i], g = image.bytes[i + 1], r = image.bytes[i + 2];
+            luma[y * (image.width / 2) + x * 2] = static_cast<unsigned char>(
+                static_cast<int>(0.299 * r + 0.587 * g + 0.114 * b));
+            const int b2 = image.bytes[i + 6], g2 = image.bytes[i + 7], r2 = image.bytes[i + 8];
+            luma[y * (image.width / 2) + x * 2 + 1] = static_cast<unsigned char>(
+                static_cast<int>(0.299 * r2 + 0.587 * g2 + 0.114 * b2));
             u[y * mw + x] = static_cast<unsigned char>(
                 static_cast<int>(-0.1687 * r - 0.3313 * g + 0.5 * b + 128));
             v[y * mw + x] = static_cast<unsigned char>(
@@ -94,7 +100,8 @@ static ProbeResult Probe(const BmpImage& image)
     const auto middle = std::chrono::steady_clock::now();
     result.refined = FaceSegmentation::RefineHeadRegion(result.baseline, mw, mh);
     const auto neckStart = std::chrono::steady_clock::now();
-    result.neck = FaceSegmentation::RefineNeckRegion(result.refined, mw, mh);
+    result.neck = FaceSegmentation::RefineNeckRegion(result.refined, mw, mh,
+                                                     luma.data(), image.width / 2);
     const auto end = std::chrono::steady_clock::now();
     result.baselineUs = std::chrono::duration_cast<std::chrono::microseconds>(
         middle - start).count();
@@ -149,6 +156,40 @@ static bool WriteOverlay(const fs::path& path, const BmpImage& image,
     return static_cast<bool>(file);
 }
 
+static bool WriteCandidateLine(const fs::path& path, const BmpImage& image,
+                               const FaceSegmentation::Result& face)
+{
+    std::vector<unsigned char> out = image.bytes;
+    if (face.neckCutRow >= 0)
+    {
+        const int center = (face.neckFaceLeft + face.neckFaceRight) / 2;
+        const int halfWidth = std::max(1, (face.neckFaceRight - face.neckFaceLeft) / 2);
+        for (int x = face.neckFaceLeft; x <= face.neckFaceRight; ++x)
+        {
+            const int dx = x - center;
+            const int row = face.neckCutRow -
+                face.neckCurveRise * dx * dx / (halfWidth * halfWidth);
+            for (int py = row * 4; py < row * 4 + 2; ++py)
+                for (int px = x * 4; px < x * 4 + 4; ++px)
+                {
+                    if (px < 0 || px >= image.width || py < 0 || py >= image.height)
+                        continue;
+                    const int bmpY = image.storedHeight > 0 ? image.height - 1 - py : py;
+                    const std::size_t i = static_cast<std::size_t>(image.offset +
+                        image.stride * bmpY + static_cast<std::uint64_t>(px) * 3);
+                    out[i] = 0;
+                    out[i + 1] = out[i + 2] = 255;
+                }
+        }
+    }
+    std::ofstream file(path, std::ios::binary);
+    if (!file)
+        return false;
+    file.write(reinterpret_cast<const char*>(out.data()),
+               static_cast<std::streamsize>(out.size()));
+    return static_cast<bool>(file);
+}
+
 static bool WriteResults(const fs::path& prefix, const BmpImage& image,
                          const ProbeResult& result)
 {
@@ -158,7 +199,8 @@ static bool WriteResults(const fs::path& prefix, const BmpImage& image,
            WriteMask(prefix.string() + "_neck.pgm", result.neck, mw, mh) &&
            WriteOverlay(prefix.string() + "_baseline.bmp", image, result.baseline, false) &&
            WriteOverlay(prefix.string() + "_refined.bmp", image, result.refined, true) &&
-           WriteOverlay(prefix.string() + "_neck.bmp", image, result.neck, true);
+           WriteOverlay(prefix.string() + "_neck.bmp", image, result.neck, true) &&
+           WriteCandidateLine(prefix.string() + "_candidate.bmp", image, result.neck);
 }
 
 static void WriteCsvHeader(std::ostream& out)
@@ -166,7 +208,8 @@ static void WriteCsvHeader(std::ostream& out)
     out << "file,width,height,baseline_left,baseline_top,baseline_width,"
            "baseline_height,baseline_pixels,baseline_us,refined_left,"
            "refined_top,refined_width,refined_height,refined_pixels,refine_us,"
-           "neck_left,neck_top,neck_width,neck_height,neck_pixels,neck_us\n";
+           "neck_left,neck_top,neck_width,neck_height,neck_pixels,neck_us,"
+           "neck_cut_row,neck_curve_rise\n";
 }
 
 static void WriteCsvRow(std::ostream& out, const std::string& name,
@@ -181,7 +224,8 @@ static void WriteCsvRow(std::ostream& out, const std::string& name,
         << r.left << ',' << r.top << ',' << r.width << ',' << r.height << ','
         << r.pixelCount << ',' << result.refineUs << ','
         << n.left << ',' << n.top << ',' << n.width << ',' << n.height << ','
-        << n.pixelCount << ',' << result.neckUs << '\n';
+        << n.pixelCount << ',' << result.neckUs << ','
+        << n.neckCutRow << ',' << n.neckCurveRise << '\n';
 }
 
 int main(int argc, char** argv)

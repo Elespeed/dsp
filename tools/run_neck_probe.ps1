@@ -58,7 +58,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '人脸分割批量测试失败' }
 
     New-Item -ItemType Directory -Path $outputDir | Out-Null
-    foreach ($dir in @('original','current','neck','mask-current','mask-neck','comparison')) {
+    foreach ($dir in @('original','current','neck','mask-current','mask-neck','candidate','comparison')) {
         New-Item -ItemType Directory -Path (Join-Path $outputDir $dir) | Out-Null
     }
     for ($i = 0; $i -lt $selected.Count; ++$i) {
@@ -67,6 +67,7 @@ try {
             @((Join-Path $chosen "$name.bmp"), (Join-Path $outputDir "original/$name.jpg")),
             @((Join-Path $probe "${name}_refined.bmp"), (Join-Path $outputDir "current/$name.jpg")),
             @((Join-Path $probe "${name}_neck.bmp"), (Join-Path $outputDir "neck/$name.jpg")),
+            @((Join-Path $probe "${name}_candidate.bmp"), (Join-Path $outputDir "candidate/$name.jpg")),
             @((Join-Path $probe "${name}_refined.pgm"), (Join-Path $outputDir "mask-current/$name.png")),
             @((Join-Path $probe "${name}_neck.pgm"), (Join-Path $outputDir "mask-neck/$name.png"))
         )
