@@ -61,3 +61,5 @@ Release 配置的插件构建产物位于 `PlugIns/FaceLocator/Release/FaceLocat
 ### v5 实验预览
 
 v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，预览提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上加入行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。预览提交当时未保存临时源码，现已重新加入 `FaceSegmentation.h`；用最新视频的 43 个入选帧核对，裁剪框、像素数与预览数据全部一致。`Debug | Win32` 插件已在本机重新构建，并通过插件接口测试。
+
+另在 `codex/jaw-contour-evaluation` 分支试验[灰度边缘引导的下颌轮廓](doc/下颌轮廓去脖子实验.md)。两轮 43 帧离线预览分别保存在 `latest-video-jaw-contour-v1/` 和 `latest-video-jaw-contour-v2/`；衣领边缘仍会干扰下颌定位，因此该实验没有接入插件。

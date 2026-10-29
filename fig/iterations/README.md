@@ -16,3 +16,5 @@ $ff = 'C:\path\to\ffmpeg.exe'
 选定试用的 v4 结果位于 `latest-video-neck-v4/`，对应算法与预览提交 `0bb020b`。`candidate/` 中黄色曲线是下巴裁剪候选，`comparison/` 左右分别为改动前和 v4；目录内的 `results.csv` 与 `selection.csv` 可追溯逐帧数据和样本选择。
 
 v5 实验预览位于 `latest-video-neck-v5/`，预览提交为 `a6d3435`。文件结构与 v4 相同；仅 001、002、026、029 四帧的裁剪行变化。预览提交当时未保存临时源码；当前分支已重新加入 v5 行宽突变修正，43 帧的裁剪框与像素数均与此目录的数据一致。Debug 插件已重新构建，摄像头效果仍待实测。
+
+下颌轮廓实验分支的两轮结果位于 `latest-video-jaw-contour-v1/` 和 `latest-video-jaw-contour-v2/`。两轮均在 43 帧上生成黄色候选线、二值 mask 和与 v5 的逐帧对照；结论及复现命令见 [下颌轮廓去脖子实验](../../doc/下颌轮廓去脖子实验.md)。这些是离线失败案例，插件仍使用 v5。
