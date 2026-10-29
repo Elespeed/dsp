@@ -14,3 +14,5 @@ $ff = 'C:\path\to\ffmpeg.exe'
 最新视频的当前版全量结果保存在 `latest-video-current/`；其中 `selection.csv` 记录逐帧入选与排除原因。去脖子实验使用 `tools/run_neck_probe.ps1`，仅重放入选帧，分别导出当前版与实验版的 mask、框和对照图。实验结论见 [最新视频去脖子实验](../../doc/最新视频去脖子实验.md)。
 
 选定试用的 v4 结果位于 `latest-video-neck-v4/`，对应算法与预览提交 `0bb020b`。`candidate/` 中黄色曲线是下巴裁剪候选，`comparison/` 左右分别为改动前和 v4；目录内的 `results.csv` 与 `selection.csv` 可追溯逐帧数据和样本选择。
+
+v5 实验预览位于 `latest-video-neck-v5/`，对应提交 `a6d3435`。文件结构与 v4 相同；仅 001、002、026、029 四帧的裁剪行变化。v5 临时源码未纳入提交，当前插件仍使用 v4。

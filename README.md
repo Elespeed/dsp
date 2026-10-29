@@ -57,3 +57,7 @@
 | `results.csv`、`selection.csv`、`README.txt` | 框和像素统计、入选理由、该轮参数与来源说明 |
 
 本机的 `Release/Plugin/PB_FaceLocator.dll` 已更新为 v4 并通过插件接口测试。其他机器检出该提交后，需先构建 `Release | Win32`，再把 `PlugIns/FaceLocator/Release/FaceLocator.dll` 复制为 `Release/Plugin/PB_FaceLocator.dll` 才能在 Release 程序中试用；生成的 DLL 不纳入 Git。
+
+### v5 实验预览
+
+v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上试过行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。该提交保存的是实验结果，未保存当时的临时 v5 源码；当前分支源码与插件仍为 v4，不能直接重放出 v5 结果。
