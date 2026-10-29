@@ -42,4 +42,18 @@
 
 视频使用 `tools/run_video_probe.ps1` 按每秒 2 帧抽样，结果保存在 `fig/iterations/改动名/`。每次改动使用新名字，已有目录不会被覆盖。首轮实拍复测及失败案例见 [参考算法借鉴与实拍视频复测](doc/参考算法借鉴与实拍视频复测.md)；运行命令见 [迭代结果说明](fig/iterations/README.md)。原始人像视频只在本机保留，不纳入 Git。
 
-最新视频的 45 帧当前版复测及 43 帧去脖子实验见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)。实验版发现误切下巴，因此插件仍使用当前精修算法。
+最新视频的 45 帧当前版复测及 43 帧去脖子实验见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)。v1/v2 的纯几何裁剪曾误切下巴；**v4 黄色下巴弧线试用版**保存在分支 `codex/neck-removal-evaluation` 的提交 **`0bb020b`**，插件在该分支调用 v4。它是试用检查点，尚需其他光线和姿态的视频复测。
+
+### v4 预览文件
+
+`fig/iterations/latest-video-current/refined/` 是改动前的框图，保留作对照。`fig/iterations/latest-video-neck-v4/` 中各文件的含义如下：
+
+| 路径 | 内容 |
+| --- | --- |
+| `original/`、`current/`、`neck/` | 同一入选帧的原图、改动前框图、v4 框图 |
+| `mask-current/`、`mask-neck/` | 改动前与 v4 的二值肤色区域 |
+| `candidate/` | 原图上黄色下巴候选弧线；没有可靠候选时不画线 |
+| `comparison/`、`contact_*.png` | 单帧左右对照及整批总览；左为改动前，右为 v4 |
+| `results.csv`、`selection.csv`、`README.txt` | 框和像素统计、入选理由、该轮参数与来源说明 |
+
+本机的 `Release/Plugin/PB_FaceLocator.dll` 已更新为 v4 并通过插件接口测试。其他机器检出该提交后，需先构建 `Release | Win32`，再把 `PlugIns/FaceLocator/Release/FaceLocator.dll` 复制为 `Release/Plugin/PB_FaceLocator.dll` 才能在 Release 程序中试用；生成的 DLL 不纳入 Git。
