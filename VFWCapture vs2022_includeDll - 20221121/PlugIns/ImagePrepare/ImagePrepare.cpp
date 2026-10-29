@@ -106,33 +106,91 @@ void InitTraceObject(TRACE_OBJECT* pThis,char name[8])
 		pThis->sName[7] = 0;
 }
 
-DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYTE* pBuffer)
+DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
+                          BYTE* pVBits, BYTE* pBuffer)
 {
-//pYBits 大小为w*h
-//pUBits 和 pVBits 的大小为 w*h/2
-//pBuffer 的大小为 w*h*6
-//下面算法都基于一个假设，即w是16的倍数
-	AFX_MANAGE_STATE(AfxGetStaticModuleState());//模块状态切换
-	//ShowDebugMessage("与printf函数用法相似,X=%d,Y=%d\n",10,5);
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+    if (!pBuffer || !pYBits || !pUBits || !pVBits ||
+        w <= 0 || h <= 0 || w % 16 != 0 || h % 4 != 0)
+        return;
 
-     //请在下面编写相应处理程序
+    BUF_STRUCT* bs = (BUF_STRUCT*)pBuffer;
+    const size_t pixels = (size_t)w * h;
+    const size_t capacity = pixels * 4;
+    const size_t colorBytes = pixels * 2;
+    const size_t reducedBytes = pixels / 4;
+    const size_t grayBytes = pixels / 16;
+    const size_t maskBytes = pixels / 16;
+    const size_t fixedBytes = sizeof(BUF_STRUCT) + colorBytes +
+        pixels + reducedBytes + grayBytes + maskBytes + sizeof(OTHER_VARS);
+    if (fixedBytes > capacity)
+        return;
 
+    if (bs->bNotInited || bs->W != w || bs->H != h)
+    {
+        // 共享缓冲区以 BUF_STRUCT 开头，所有指针均指向其后固定区域。
+        memset(bs, 0, sizeof(BUF_STRUCT));
+        BYTE* next = pBuffer + sizeof(BUF_STRUCT);
+        bs->W = w;
+        bs->H = h;
+        bs->colorBmp = next;
+        next += colorBytes;
+        bs->grayBmp = next;
+        next += pixels;
+        bs->clrBmp_1d8 = next;
+        next += reducedBytes;
+        bs->grayBmp_1d16 = next;
+        next += grayBytes;
+        bs->TempImage1d8 = next;
+        next += maskBytes;
+        bs->pOtherVars = (OTHER_VARS*)next;
+        next += sizeof(OTHER_VARS);
+        memset(bs->pOtherVars, 0, sizeof(OTHER_VARS));
+        bs->pOtherData = next;
+        bs->max_allocSize = (int)(capacity - (next - pBuffer));
+        myHeapAllocInit(bs);
+        InitFeatureBuffer(bs);
+        bs->bNotInited = false;
+        ShowDebugMessage("ImagePrepare 初始化：原图 %dx%d，降采样 %dx%d，色度 %dx%d",
+            w, h, w / 2, h / 4, w / 4, h / 4);
+    }
 
+    // 显示图引用当前帧；固定缓存分别保存原图与降采样结果。
+    bs->displayImage = pYBits;
+    memcpy(bs->colorBmp, pYBits, pixels);
+    memcpy(bs->colorBmp + pixels, pUBits, pixels / 2);
+    memcpy(bs->colorBmp + pixels + pixels / 2, pVBits, pixels / 2);
+    memcpy(bs->grayBmp, pYBits, pixels);
 
+    const int smallW = w / 2;
+    const int smallH = h / 4;
+    const int yCount = smallW * smallH;
+    const int uvCount = yCount / 2;
+    BYTE* outY = bs->clrBmp_1d8;
+    BYTE* outU = outY + yCount;
+    BYTE* outV = outU + uvCount;
+    for (int y = 0; y < smallH; ++y)
+    {
+        const int sourceY = y * 4;
+        for (int x = 0; x < smallW; ++x)
+            outY[y * smallW + x] = pYBits[sourceY * w + x * 2];
+        for (int x = 0; x < smallW / 2; ++x)
+        {
+            const int sourceIndex = sourceY * (w / 2) + x * 2;
+            outU[y * (smallW / 2) + x] = pUBits[sourceIndex];
+            outV[y * (smallW / 2) + x] = pVBits[sourceIndex];
+        }
+    }
 
+    for (int y = 0; y < h / 4; ++y)
+        for (int x = 0; x < w / 4; ++x)
+            bs->grayBmp_1d16[y * (w / 4) + x] =
+                pYBits[(y * 4) * w + x * 4];
 
-
-	//下面的步骤用于测试图像产生的结果是否正确。
-	/*
-		if( bLastPlugin )
-		{
-		
-			//测试grayBmp_1d16:将grayBmp_1d16复制到显示图片的左上角
-			CopyToRect(pBufStruct->grayBmp_1d16, pYBits, w/4, h/4, w, h, 0, 0, true);
-			//测试colorBmp:将clrBmp_1d8复制到显示图片的右上角
-			CopyToRect(pBufStruct->clrBmp_1d8,  pYBits, w/2, h/4, w, h, w/2, 0, false);
-		}
-    */
+    // 单独激活预处理插件时，在右上角展示降采样结果以核对坐标。
+    if (bLastPlugin)
+        CopyToRect(bs->clrBmp_1d8, pYBits, smallW, smallH,
+                   w, h, w - smallW, 0, false);
 }
 DLL_EXP void ON_PLUGINEXIT()
 {
