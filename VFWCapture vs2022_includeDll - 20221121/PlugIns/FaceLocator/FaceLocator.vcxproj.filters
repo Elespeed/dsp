@@ -31,6 +31,12 @@
     <ClInclude Include="FaceLocator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="FaceSegmentation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="JawCut.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
