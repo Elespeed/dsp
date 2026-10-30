@@ -62,4 +62,4 @@ Release 配置的插件构建产物位于 `PlugIns/FaceLocator/Release/FaceLocat
 
 v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，预览提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上加入行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。预览提交当时未保存临时源码，现已重新加入 `FaceSegmentation.h`；用最新视频的 43 个入选帧核对，裁剪框、像素数与预览数据全部一致。`Debug | Win32` 插件已在本机重新构建，并通过插件接口测试。
 
-另在 `codex/jaw-contour-evaluation` 分支试验[下颌轮廓去脖子](doc/下颌轮廓去脖子实验.md)。灰度边缘 v1/v2 的黄色曲线误跟随衣领；根据用户标出的真实下巴位置，新增面部关键点 v3 离线参照，43 帧对照保存在 `fig/iterations/latest-video-jaw-landmark-v3/`。v3 需要额外模型，当前没有接入插件；摄像头插件仍使用 v5。
+另在 `codex/jaw-contour-evaluation` 分支试验[下颌轮廓去脖子](doc/下颌轮廓去脖子实验.md)。灰度边缘 v1/v2 的黄色曲线误跟随衣领；根据用户标出的真实下巴位置，新增面部关键点 v3，43 帧离线对照保存在 `fig/iterations/latest-video-jaw-landmark-v3/`。**提交 `4c44215` 已将关键点裁剪接入 `FaceLocator` 的 Debug 插件**：识别成功时使用绿色框和下巴十字；模型不可用或关键点无效时回退 v5，显示紫色框。本机 `Debug/Plugin/` 中的模型和 Python 环境已配置；若清理该目录，可运行 `tools/setup_jaw_landmark_debug.ps1` 恢复。
