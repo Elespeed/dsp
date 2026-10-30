@@ -101,7 +101,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
 
     BUF_STRUCT* bs = (BUF_STRUCT*)pBuffer;
     if (bs->bNotInited || bs->W != w || bs->H != h ||
-        !bs->clrBmp_1d8 || !bs->TempImage1d8)
+        !bs->clrBmp_1d8 || !bs->TempImage1d8 || !bs->colorBmp)
         return;
 
     bs->rcnFace.left = bs->rcnFace.top = 0;
@@ -114,8 +114,9 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
     const BYTE* u = bs->clrBmp_1d8 + yCount;
     const BYTE* v = u + uvCount;
     // 在 Y 平面写入二值图之前，先用原亮度定位下巴并裁掉下方肤色。
-    FaceSegmentation::Result face = FaceSegmentation::RunNeckRefined(
-        u, v, maskW, maskH, bs->clrBmp_1d8, w / 2);
+    // 使用预处理保存的原始 YUV，避免画框和预览覆盖嘴部颜色证据。
+    FaceSegmentation::Result face = FaceSegmentation::RunJawRefined(
+        u, v, maskW, maskH, bs->colorBmp);
 
     memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
     // 仅在降采样图的 Y 平面写二值结果，保留 U/V 供后续插件使用。

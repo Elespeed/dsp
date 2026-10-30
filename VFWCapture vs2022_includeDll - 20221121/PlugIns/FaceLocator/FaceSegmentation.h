@@ -11,6 +11,8 @@
 #undef max
 #endif
 
+#include "JawCut.h"
+
 namespace FaceSegmentation
 {
 struct Result
@@ -484,6 +486,83 @@ inline Result RunNeckRefined(const unsigned char* u, const unsigned char* v,
 {
     return RefineNeckRegion(RunRefined(u, v, width, height), width, height,
                             luma, lumaStride);
+}
+
+// 课程基线之后只运行新的嘴部引导裁剪；弱证据时保留本帧基线。
+inline Result RunJawRefined(const unsigned char* u, const unsigned char* v,
+                            int width, int height,
+                            const unsigned char* originalYuv,
+                            JawCut::Curve* diagnostic = 0)
+{
+    if (diagnostic)
+        *diagnostic = JawCut::Curve();
+    Result baseline = RunBaseline(u, v, width, height);
+    if (!baseline.pixelCount || !originalYuv || width <= 0 || height <= 0 ||
+        width > 44739242 / height)
+        return baseline;
+
+    const int originalWidth = width * 4;
+    const int originalHeight = height * 4;
+    const int originalPixels = originalWidth * originalHeight;
+    std::vector<unsigned char> rgb(originalPixels * 3);
+    std::vector<unsigned char> fullMask(originalPixels);
+    const unsigned char* originalY = originalYuv;
+    const unsigned char* originalU = originalY + originalPixels;
+    const unsigned char* originalV = originalU + originalPixels / 2;
+    for (int y = 0; y < originalHeight; ++y)
+        for (int x = 0; x < originalWidth; ++x)
+        {
+            const int index = y * originalWidth + x;
+            const int chroma = y * (originalWidth / 2) + x / 2;
+            const double luma = originalY[index];
+            const double cb = originalU[chroma] - 128;
+            const double cr = originalV[chroma] - 128;
+            rgb[index * 3] = static_cast<unsigned char>(JawCut::Clamp(
+                static_cast<int>(luma + 1.370705 * cr), 0, 255));
+            rgb[index * 3 + 1] = static_cast<unsigned char>(JawCut::Clamp(
+                static_cast<int>(luma - 0.698001 * cr - 0.337633 * cb), 0, 255));
+            rgb[index * 3 + 2] = static_cast<unsigned char>(JawCut::Clamp(
+                static_cast<int>(luma + 1.732446 * cb), 0, 255));
+            fullMask[index] = baseline.mask[(y / 4) * width + x / 4];
+        }
+
+    JawCut::Curve curve;
+    if (!JawCut::FindCurve(rgb.data(), fullMask.data(), originalWidth,
+                           originalHeight, curve))
+        return baseline;
+
+    Result result = baseline;
+    int minX = width, minY = height, maxX = -1, maxY = -1, pixels = 0;
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+        {
+            unsigned char& value = result.mask[y * width + x];
+            if (!value)
+                continue;
+            const int originalX = x * 4 + 2;
+            const int originalYRow = y * 4 + 2;
+            if (originalX < curve.left || originalX > curve.right ||
+                originalYRow > curve.rows[originalX - curve.left])
+            {
+                value = 0;
+                continue;
+            }
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+            ++pixels;
+        }
+    if (!pixels)
+        return baseline;
+    result.left = minX * 2;
+    result.top = minY;
+    result.width = (maxX - minX + 1) * 2;
+    result.height = maxY - minY + 1;
+    result.pixelCount = pixels * 2;
+    if (diagnostic)
+        *diagnostic = curve;
+    return result;
 }
 }
 

@@ -22,8 +22,9 @@ struct BmpImage
 
 struct ProbeResult
 {
-    FaceSegmentation::Result baseline, refined, neck;
-    long long baselineUs = 0, refineUs = 0, neckUs = 0;
+    FaceSegmentation::Result baseline, jaw;
+    JawCut::Curve curve;
+    long long baselineUs = 0, jawUs = 0;
 };
 
 static std::uint16_t Read16(const std::vector<unsigned char>& b, std::size_t i)
@@ -74,41 +75,48 @@ static bool ReadBmp(const fs::path& path, BmpImage& image)
 static ProbeResult Probe(const BmpImage& image)
 {
     const int mw = image.width / 4, mh = image.height / 4;
+    const int pixels = image.width * image.height;
+    std::vector<unsigned char> yuv(pixels * 2);
+    unsigned char* fullY = yuv.data();
+    unsigned char* fullU = fullY + pixels;
+    unsigned char* fullV = fullU + pixels / 2;
+    for (int y = 0; y < image.height; ++y)
+        for (int x = 0; x < image.width; ++x)
+        {
+            const int bmpY = image.storedHeight > 0 ? image.height - 1 - y : y;
+            const std::size_t i = static_cast<std::size_t>(image.offset +
+                image.stride * bmpY + static_cast<std::uint64_t>(x) * 3);
+            const int b = image.bytes[i], g = image.bytes[i + 1], r = image.bytes[i + 2];
+            fullY[y * image.width + x] = static_cast<unsigned char>(
+                static_cast<int>(0.299 * r + 0.587 * g + 0.114 * b));
+            if (x % 2 == 0)
+            {
+                const int chroma = y * (image.width / 2) + x / 2;
+                fullU[chroma] = static_cast<unsigned char>(
+                    static_cast<int>(-0.1687 * r - 0.3313 * g + 0.5 * b + 128));
+                fullV[chroma] = static_cast<unsigned char>(
+                    static_cast<int>(0.5 * r - 0.4187 * g - 0.0813 * b + 128));
+            }
+        }
     std::vector<unsigned char> u(mw * mh), v(mw * mh);
-    std::vector<unsigned char> luma((image.width / 2) * mh);
     for (int y = 0; y < mh; ++y)
         for (int x = 0; x < mw; ++x)
         {
-            const int sourceY = y * 4;
-            const int bmpY = image.storedHeight > 0 ? image.height - 1 - sourceY : sourceY;
-            const std::size_t i = static_cast<std::size_t>(image.offset +
-                image.stride * bmpY + static_cast<std::uint64_t>(x * 4) * 3);
-            const int b = image.bytes[i], g = image.bytes[i + 1], r = image.bytes[i + 2];
-            luma[y * (image.width / 2) + x * 2] = static_cast<unsigned char>(
-                static_cast<int>(0.299 * r + 0.587 * g + 0.114 * b));
-            const int b2 = image.bytes[i + 6], g2 = image.bytes[i + 7], r2 = image.bytes[i + 8];
-            luma[y * (image.width / 2) + x * 2 + 1] = static_cast<unsigned char>(
-                static_cast<int>(0.299 * r2 + 0.587 * g2 + 0.114 * b2));
-            u[y * mw + x] = static_cast<unsigned char>(
-                static_cast<int>(-0.1687 * r - 0.3313 * g + 0.5 * b + 128));
-            v[y * mw + x] = static_cast<unsigned char>(
-                static_cast<int>(0.5 * r - 0.4187 * g - 0.0813 * b + 128));
+            const int chroma = (y * 4) * (image.width / 2) + x * 2;
+            u[y * mw + x] = fullU[chroma];
+            v[y * mw + x] = fullV[chroma];
         }
     ProbeResult result;
     const auto start = std::chrono::steady_clock::now();
     result.baseline = FaceSegmentation::RunBaseline(u.data(), v.data(), mw, mh);
     const auto middle = std::chrono::steady_clock::now();
-    result.refined = FaceSegmentation::RefineHeadRegion(result.baseline, mw, mh);
-    const auto neckStart = std::chrono::steady_clock::now();
-    result.neck = FaceSegmentation::RefineNeckRegion(result.refined, mw, mh,
-                                                     luma.data(), image.width / 2);
+    result.jaw = FaceSegmentation::RunJawRefined(u.data(), v.data(), mw, mh,
+                                                yuv.data(), &result.curve);
     const auto end = std::chrono::steady_clock::now();
     result.baselineUs = std::chrono::duration_cast<std::chrono::microseconds>(
         middle - start).count();
-    result.refineUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        neckStart - middle).count();
-    result.neckUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        end - neckStart).count();
+    result.jawUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        end - middle).count();
     return result;
 }
 
@@ -157,29 +165,21 @@ static bool WriteOverlay(const fs::path& path, const BmpImage& image,
 }
 
 static bool WriteCandidateLine(const fs::path& path, const BmpImage& image,
-                               const FaceSegmentation::Result& face)
+                               const JawCut::Curve& curve)
 {
     std::vector<unsigned char> out = image.bytes;
-    if (face.neckCutRow >= 0)
+    for (int x = curve.left; x <= curve.right; ++x)
     {
-        const int center = (face.neckFaceLeft + face.neckFaceRight) / 2;
-        const int halfWidth = std::max(1, (face.neckFaceRight - face.neckFaceLeft) / 2);
-        for (int x = face.neckFaceLeft; x <= face.neckFaceRight; ++x)
+        const int row = static_cast<int>(std::round(curve.rows[x - curve.left]));
+        for (int py = row; py < row + 2; ++py)
         {
-            const int dx = x - center;
-            const int row = face.neckCutRow -
-                face.neckCurveRise * dx * dx / (halfWidth * halfWidth);
-            for (int py = row * 4; py < row * 4 + 2; ++py)
-                for (int px = x * 4; px < x * 4 + 4; ++px)
-                {
-                    if (px < 0 || px >= image.width || py < 0 || py >= image.height)
-                        continue;
-                    const int bmpY = image.storedHeight > 0 ? image.height - 1 - py : py;
-                    const std::size_t i = static_cast<std::size_t>(image.offset +
-                        image.stride * bmpY + static_cast<std::uint64_t>(px) * 3);
-                    out[i] = 0;
-                    out[i + 1] = out[i + 2] = 255;
-                }
+            if (py < 0 || py >= image.height)
+                continue;
+            const int bmpY = image.storedHeight > 0 ? image.height - 1 - py : py;
+            const std::size_t i = static_cast<std::size_t>(image.offset +
+                image.stride * bmpY + static_cast<std::uint64_t>(x) * 3);
+            out[i] = 0;
+            out[i + 1] = out[i + 2] = 255;
         }
     }
     std::ofstream file(path, std::ios::binary);
@@ -195,37 +195,34 @@ static bool WriteResults(const fs::path& prefix, const BmpImage& image,
 {
     const int mw = image.width / 4, mh = image.height / 4;
     return WriteMask(prefix.string() + "_baseline.pgm", result.baseline, mw, mh) &&
-           WriteMask(prefix.string() + "_refined.pgm", result.refined, mw, mh) &&
-           WriteMask(prefix.string() + "_neck.pgm", result.neck, mw, mh) &&
+           WriteMask(prefix.string() + "_jaw.pgm", result.jaw, mw, mh) &&
            WriteOverlay(prefix.string() + "_baseline.bmp", image, result.baseline, false) &&
-           WriteOverlay(prefix.string() + "_refined.bmp", image, result.refined, true) &&
-           WriteOverlay(prefix.string() + "_neck.bmp", image, result.neck, true) &&
-           WriteCandidateLine(prefix.string() + "_candidate.bmp", image, result.neck);
+           WriteOverlay(prefix.string() + "_jaw.bmp", image, result.jaw, true) &&
+           WriteCandidateLine(prefix.string() + "_candidate.bmp", image, result.curve);
 }
 
 static void WriteCsvHeader(std::ostream& out)
 {
     out << "file,width,height,baseline_left,baseline_top,baseline_width,"
-           "baseline_height,baseline_pixels,baseline_us,refined_left,"
-           "refined_top,refined_width,refined_height,refined_pixels,refine_us,"
-           "neck_left,neck_top,neck_width,neck_height,neck_pixels,neck_us,"
-           "neck_cut_row,neck_curve_rise\n";
+           "baseline_height,baseline_pixels,baseline_us,jaw_left,jaw_top,"
+           "jaw_width,jaw_height,jaw_pixels,jaw_us,jaw_found,mouth_y,"
+           "mouth_score,mouth_slope,curve_center_y\n";
 }
 
 static void WriteCsvRow(std::ostream& out, const std::string& name,
                         const BmpImage& image, const ProbeResult& result)
 {
     const auto& b = result.baseline;
-    const auto& r = result.refined;
-    const auto& n = result.neck;
+    const auto& j = result.jaw;
+    const auto& c = result.curve;
+    const double center = c.rows.empty() ? -1.0 : c.rows[c.rows.size() / 2];
     out << '"' << name << "\"," << image.width << ',' << image.height << ','
         << b.left << ',' << b.top << ',' << b.width << ',' << b.height << ','
         << b.pixelCount << ',' << result.baselineUs << ','
-        << r.left << ',' << r.top << ',' << r.width << ',' << r.height << ','
-        << r.pixelCount << ',' << result.refineUs << ','
-        << n.left << ',' << n.top << ',' << n.width << ',' << n.height << ','
-        << n.pixelCount << ',' << result.neckUs << ','
-        << n.neckCutRow << ',' << n.neckCurveRise << '\n';
+        << j.left << ',' << j.top << ',' << j.width << ',' << j.height << ','
+        << j.pixelCount << ',' << result.jawUs << ',' << !c.rows.empty() << ','
+        << c.mouthY << ',' << c.mouthScore << ',' << c.mouthSlope << ','
+        << center << '\n';
 }
 
 int main(int argc, char** argv)
@@ -254,12 +251,10 @@ int main(int argc, char** argv)
         std::printf("baseline: %d %d %d %d pixels=%d time=%lldus\n",
             result.baseline.left, result.baseline.top, result.baseline.width,
             result.baseline.height, result.baseline.pixelCount, result.baselineUs);
-        std::printf("refined:  %d %d %d %d pixels=%d time=%lldus\n",
-            result.refined.left, result.refined.top, result.refined.width,
-            result.refined.height, result.refined.pixelCount, result.refineUs);
-        std::printf("neck:     %d %d %d %d pixels=%d time=%lldus\n",
-            result.neck.left, result.neck.top, result.neck.width,
-            result.neck.height, result.neck.pixelCount, result.neckUs);
+        std::printf("jaw:      %d %d %d %d pixels=%d time=%lldus found=%d\n",
+            result.jaw.left, result.jaw.top, result.jaw.width,
+            result.jaw.height, result.jaw.pixelCount, result.jawUs,
+            !result.curve.rows.empty());
         return csv ? 0 : 2;
     }
     const fs::path inputDir(argv[2]), outputDir(argv[3]);

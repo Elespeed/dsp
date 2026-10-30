@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -59,7 +59,12 @@ int main(int argc, char** argv)
         bs->nFacePixelNum != 960 ||
         std::memcmp(originalUV.data(), bs->clrBmp_1d8 + yCount,
                     uvCount * 2) != 0)
+    {
+        std::fprintf(stderr, "basic contract: box=%d,%d,%d,%d pixels=%d\n",
+            bs->rcnFace.left, bs->rcnFace.top, bs->rcnFace.width,
+            bs->rcnFace.height, bs->nFacePixelNum);
         return 1;
+    }
     for (int row = 0; row < h / 4; ++row)
         for (int col = 0; col < w / 4; ++col)
         {
@@ -69,7 +74,7 @@ int main(int argc, char** argv)
                 return 1;
         }
 
-    // 再用头颈肩连通样本确认 DLL 实际采用亮度辅助裁剪。
+    // 用头颈连通样本确认 DLL 实际采用嘴部引导裁剪。
     std::fill(y, y + pixels, 150);
     std::memset(u, 0, pixels);
     auto fillSkin = [&](int left, int top, int right, int bottom)
@@ -83,8 +88,7 @@ int main(int argc, char** argv)
             }
     };
     fillSkin(63, 18, 97, 57);
-    fillSkin(71, 57, 88, 76);
-    fillSkin(42, 76, 118, 102);
+    fillSkin(71, 57, 88, 85);
     std::fill(y + 42 * 4 * w, y + (42 * 4 + 1) * w, 90);
     std::fill(shared.begin(), shared.end(), 0);
     ((BUF_STRUCT*)shared.data())->bNotInited = true;
@@ -94,10 +98,16 @@ int main(int argc, char** argv)
     runLocate(w, h, y, u, v, shared.data());
     if (!bs->TempImage1d8[45 * (w / 4) + 80] ||
         bs->TempImage1d8[68 * (w / 4) + 80] ||
-        bs->rcnFace.height >= 58 ||
+        bs->rcnFace.height >= 67 ||
         std::memcmp(originalUV.data(), bs->clrBmp_1d8 + yCount,
                     uvCount * 2) != 0)
+    {
+        std::fprintf(stderr, "jaw contract: box=%d,%d,%d,%d kept_head=%d kept_neck=%d\n",
+            bs->rcnFace.left, bs->rcnFace.top, bs->rcnFace.width,
+            bs->rcnFace.height, bs->TempImage1d8[45 * (w / 4) + 80] != 0,
+            bs->TempImage1d8[68 * (w / 4) + 80] != 0);
         return 1;
+    }
     std::puts("FaceLocator plugin contract: PASS");
     FreeLibrary(locate);
     FreeLibrary(prepare);

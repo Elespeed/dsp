@@ -38,11 +38,18 @@
 
 ## 离线图片与视频测试
 
-单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。工具导出基线和精修的 mask、画框图、像素统计与算法耗时。
+单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。当前分支导出课程基线与嘴部引导裁剪的 mask、画框图、候选曲线、像素统计与算法耗时。
 
 视频使用 `tools/run_video_probe.ps1` 按每秒 2 帧抽样，结果保存在 `fig/iterations/改动名/`。每次改动使用新名字，已有目录不会被覆盖。首轮实拍复测及失败案例见 [参考算法借鉴与实拍视频复测](doc/参考算法借鉴与实拍视频复测.md)；运行命令见 [迭代结果说明](fig/iterations/README.md)。原始人像视频只在本机保留，不纳入 Git。
 
-最新视频的 45 帧当前版复测及 43 帧去脖子实验见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)。v1/v2 的纯几何裁剪曾误切下巴；**v4 黄色下巴弧线试用版**保存在分支 `codex/neck-removal-evaluation` 的提交 **`0bb020b`**，可作为回退检查点。当前分支已在 v4 基础上恢复 v5 行宽突变修正；仍需用真实摄像头验证不同光线和姿态。
+当前 `codex/jaw-cut-integration` 分支从 `codex/neck-removal-evaluation` 的 `f37d17a` 新建。插件实际路径保留课程肤色基线，改用 `jaw_experiment` 的嘴部定位与曲线裁剪；旧的头颈几何精修不参与插件处理。三张实验图的核心输出与原实验一致，最新视频的 43 帧对照见 [嘴部引导下颌裁剪迁移](doc/嘴部引导下颌裁剪迁移.md)。
+
+```powershell
+$ff = python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
+& .\tools\run_jaw_probe.ps1 -Ffmpeg $ff -Iteration 'jaw-local-check'
+```
+
+视频脚本将原帧、基线与新裁剪的框和 mask、候选曲线、CSV 与拼图存入 `fig/iterations/latest-video-jaw/`。若使用其他 ffmpeg，可直接传入其可执行文件路径。旧版 v1–v5 实验记录见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)；v4 提交 `0bb020b` 可作历史回退检查点。
 
 ### v4 预览文件
 
@@ -56,8 +63,8 @@
 | `comparison/`、`contact_*.png` | 单帧左右对照及整批总览；左为改动前，右为 v4 |
 | `results.csv`、`selection.csv`、`README.txt` | 框和像素统计、入选理由、该轮参数与来源说明 |
 
-Release 配置的插件构建产物位于 `PlugIns/FaceLocator/Release/FaceLocator.dll`；若用 Release 程序试验，需将新构建的文件复制为 `Release/Plugin/PB_FaceLocator.dll`。本机此前的 Release DLL 是 v4，不能代表当前 v5 源码；生成的 DLL 不纳入 Git。
+Release 配置的插件构建产物位于 `PlugIns/FaceLocator/Release/FaceLocator.dll`；若用 Release 程序试验，需将新构建的文件复制为 `Release/Plugin/PB_FaceLocator.dll`。本机此前的 Release DLL 是 v4，不能代表当前分支的新方法；生成的 DLL 不纳入 Git。
 
 ### v5 实验预览
 
-v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，预览提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上加入行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。预览提交当时未保存临时源码，现已重新加入 `FaceSegmentation.h`；用最新视频的 43 个入选帧核对，裁剪框、像素数与预览数据全部一致。`Debug | Win32` 插件已在本机重新构建，并通过插件接口测试。
+v5 的 43 帧预览和逐帧数据另存于 `fig/iterations/latest-video-neck-v5/`，预览提交为 **`a6d3435`**。目录结构与 v4 相同；其中 `candidate/` 是黄色下巴候选弧线，`comparison/` 和 `contact_*.png` 是改动前与 v5 的对照。v5 在 v4 上加入行宽突变修正，裁剪行仅在 001、002、026、029 四帧变化。该方法曾在来源分支完成 43 帧与插件接口核对；它是本分支的视频比较对象，不参与当前插件实际处理。

@@ -51,29 +51,30 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '人脸检测批量测试失败' }
 
     New-Item -ItemType Directory -Path $outputDir | Out-Null
-    foreach ($name in @('original', 'baseline', 'refined', 'mask-baseline', 'mask-refined')) {
+    foreach ($name in @('original', 'baseline', 'jaw', 'candidate', 'mask-baseline', 'mask-jaw')) {
         New-Item -ItemType Directory -Path (Join-Path $outputDir $name) | Out-Null
     }
     $jobs = @(
         @((Join-Path $frames 'frame_%03d.bmp'), (Join-Path $outputDir 'original/frame_%03d.jpg'), 'jpg'),
         @((Join-Path $probe 'frame_%03d_baseline.bmp'), (Join-Path $outputDir 'baseline/frame_%03d.jpg'), 'jpg'),
-        @((Join-Path $probe 'frame_%03d_refined.bmp'), (Join-Path $outputDir 'refined/frame_%03d.jpg'), 'jpg'),
+        @((Join-Path $probe 'frame_%03d_jaw.bmp'), (Join-Path $outputDir 'jaw/frame_%03d.jpg'), 'jpg'),
+        @((Join-Path $probe 'frame_%03d_candidate.bmp'), (Join-Path $outputDir 'candidate/frame_%03d.jpg'), 'jpg'),
         @((Join-Path $probe 'frame_%03d_baseline.pgm'), (Join-Path $outputDir 'mask-baseline/frame_%03d.png'), 'png'),
-        @((Join-Path $probe 'frame_%03d_refined.pgm'), (Join-Path $outputDir 'mask-refined/frame_%03d.png'), 'png')
+        @((Join-Path $probe 'frame_%03d_jaw.pgm'), (Join-Path $outputDir 'mask-jaw/frame_%03d.png'), 'png')
     )
     foreach ($job in $jobs) {
         $extra = if ($job[2] -eq 'jpg') { @('-q:v', '4') } else { @() }
         & $ffmpegPath -hide_banner -loglevel error -framerate 2 -i $job[0] @extra $job[1]
         if ($LASTEXITCODE -ne 0) { throw "结果图片转换失败：$($job[1])" }
     }
-    & $ffmpegPath -hide_banner -loglevel error -framerate 2 -i (Join-Path $outputDir 'refined/frame_%03d.jpg') -vf 'scale=320:240,tile=4x4' -fps_mode vfr (Join-Path $outputDir 'contact_%02d.png')
+    & $ffmpegPath -hide_banner -loglevel error -framerate 2 -i (Join-Path $outputDir 'jaw/frame_%03d.jpg') -vf 'scale=320:240,tile=4x4' -fps_mode vfr (Join-Path $outputDir 'contact_%02d.png')
     if ($LASTEXITCODE -ne 0) { throw '总览图生成失败' }
     Copy-Item -LiteralPath (Join-Path $probe 'results.csv') -Destination (Join-Path $outputDir 'results.csv')
     $manifest = @(
         "迭代名称：$Iteration",
         "源视频：$videoPath",
         "抽帧：每秒 2 帧，等比例缩放为 640x360，上下各补黑边 60 像素",
-        "结果：原帧、基线框、精修框、两种 mask、CSV 和总览图",
+        "结果：原帧、基线框、新下颌裁剪框、候选曲线、两种 mask、CSV 和总览图",
         "代码版本：$(git -C $repo rev-parse --short HEAD)",
         "坐标：CSV 中的框使用 clrBmp_1d8 坐标系"
     )
