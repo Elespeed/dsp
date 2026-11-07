@@ -38,18 +38,18 @@
 
 ## 离线图片与视频测试
 
-单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。单帧报告取证可用 `face_probe_bmp --stages 输入.bmp 输出前缀` 额外导出肤色阈值、开运算、闭运算与最大连通域的 PGM 阶段图，常规基线和嘴部裁剪输出仍同时生成。当前分支导出课程基线与嘴部引导裁剪的 mask、画框图、候选曲线、像素统计与算法耗时。
+单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。单帧报告取证可用 `face_probe_bmp --stages 输入.bmp 输出前缀` 额外导出肤色阈值、开运算、闭运算与最大连通域的 PGM 阶段图，常规基线和下颚曲线精修输出仍同时生成。当前分支导出课程基线与新算法的 mask、画框图、候选曲线、脸宽诊断、像素统计与算法耗时。
 
 视频使用 `tools/run_video_probe.ps1` 按每秒 2 帧抽样，结果保存在 `fig/iterations/改动名/`。每次改动使用新名字，已有目录不会被覆盖。首轮实拍复测及失败案例见 [参考算法借鉴与实拍视频复测](doc/参考算法借鉴与实拍视频复测.md)；运行命令见 [迭代结果说明](fig/iterations/README.md)。原始人像视频只在本机保留，不纳入 Git。
 
-当前 `codex/jaw-cut-integration` 分支从 `codex/neck-removal-evaluation` 的 `f37d17a` 新建。插件实际路径保留课程肤色基线，改用 `jaw_experiment` 的嘴部定位与曲线裁剪；旧的头颈几何精修不参与插件处理。三张实验图的核心输出与原实验一致，最新视频的 43 帧对照见 [嘴部引导下颌裁剪迁移](doc/嘴部引导下颌裁剪迁移.md)。
+当前 `jaw-line` 分支基于 `codex/jaw-cut-integration` 的预处理诊断检查点。插件保留课程肤色基线，不再检测嘴部，而是从最大肤色连通域的稳定脸宽、中心和最宽行生成下颚曲线；曲线无效时回退本帧基线。算法接入与 8 张张嘴照片、43 帧视频结果见 [下颚曲线精修迁移](doc/下颚曲线精修迁移.md)，上一版方法保留在 [嘴部引导下颌裁剪迁移](doc/嘴部引导下颌裁剪迁移.md) 中作为历史记录。
 
 ```powershell
 $ff = python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
 & .\tools\run_jaw_probe.ps1 -Ffmpeg $ff -Iteration 'jaw-local-check'
 ```
 
-视频脚本将原帧、基线与新裁剪的框和 mask、候选曲线、CSV 与拼图存入 `fig/iterations/latest-video-jaw/`。若使用其他 ffmpeg，可直接传入其可执行文件路径。旧版 v1–v5 实验记录见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)；v4 提交 `0bb020b` 可作历史回退检查点。
+视频脚本将原帧、基线与新裁剪的框和 mask、候选曲线、CSV 与拼图存入指定迭代目录。当前精简归档位于 `fig/iterations/latest-video-jaw-line/`，只保留 CSV、选择表与总览图；若使用其他 ffmpeg，可直接传入其可执行文件路径。旧版 v1–v5 实验记录见 [最新视频去脖子实验](doc/最新视频去脖子实验.md)。
 
 ### v4 预览文件
 
