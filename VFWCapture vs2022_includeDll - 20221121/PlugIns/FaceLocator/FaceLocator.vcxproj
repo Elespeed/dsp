@@ -170,7 +170,7 @@
   <ItemGroup>
     <ClInclude Include="FaceLocator.h" />
     <ClInclude Include="FaceSegmentation.h" />
-    <ClInclude Include="JawCut.h" />
+    <ClInclude Include="JawRefiner.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="StdAfx.h" />
   </ItemGroup>

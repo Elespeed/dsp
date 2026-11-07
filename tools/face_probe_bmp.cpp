@@ -24,7 +24,7 @@ struct ProbeResult
 {
     FaceSegmentation::Result baseline, jaw;
     FaceSegmentation::BaselineStages stages;
-    JawCut::Curve curve;
+    JawRefiner::Curve curve;
     long long baselineUs = 0, jawUs = 0;
 };
 
@@ -99,21 +99,28 @@ static ProbeResult Probe(const BmpImage& image, bool captureStages = false)
                     static_cast<int>(0.5 * r - 0.4187 * g - 0.0813 * b + 128));
             }
         }
+    const int reducedYStride = image.width / 2;
+    std::vector<unsigned char> reducedY(reducedYStride * mh);
     std::vector<unsigned char> u(mw * mh), v(mw * mh);
     for (int y = 0; y < mh; ++y)
+    {
+        for (int x = 0; x < reducedYStride; ++x)
+            reducedY[y * reducedYStride + x] =
+                fullY[(y * 4) * image.width + x * 2];
         for (int x = 0; x < mw; ++x)
         {
             const int chroma = (y * 4) * (image.width / 2) + x * 2;
             u[y * mw + x] = fullU[chroma];
             v[y * mw + x] = fullV[chroma];
         }
+    }
     ProbeResult result;
     const auto start = std::chrono::steady_clock::now();
     result.baseline = FaceSegmentation::RunBaseline(
         u.data(), v.data(), mw, mh, captureStages ? &result.stages : nullptr);
     const auto middle = std::chrono::steady_clock::now();
     result.jaw = FaceSegmentation::RunJawRefined(u.data(), v.data(), mw, mh,
-                                                yuv.data(), &result.curve);
+        reducedY.data(), reducedYStride, &result.curve);
     const auto end = std::chrono::steady_clock::now();
     result.baselineUs = std::chrono::duration_cast<std::chrono::microseconds>(
         middle - start).count();
@@ -176,19 +183,22 @@ static bool WriteOverlay(const fs::path& path, const BmpImage& image,
 }
 
 static bool WriteCandidateLine(const fs::path& path, const BmpImage& image,
-                               const JawCut::Curve& curve)
+                               const JawRefiner::Curve& curve)
 {
     std::vector<unsigned char> out = image.bytes;
     for (int x = curve.left; x <= curve.right; ++x)
     {
-        const int row = static_cast<int>(std::round(curve.rows[x - curve.left]));
+        const int originalX = x * 4 + 2;
+        const int row = static_cast<int>(
+            std::round(curve.rows[x - curve.left] * 4.0 + 2.0));
         for (int py = row; py < row + 2; ++py)
+            for (int px = originalX - 2; px < originalX + 2; ++px)
         {
-            if (py < 0 || py >= image.height)
+            if (px < 0 || px >= image.width || py < 0 || py >= image.height)
                 continue;
             const int bmpY = image.storedHeight > 0 ? image.height - 1 - py : py;
             const std::size_t i = static_cast<std::size_t>(image.offset +
-                image.stride * bmpY + static_cast<std::uint64_t>(x) * 3);
+                image.stride * bmpY + static_cast<std::uint64_t>(px) * 3);
             out[i] = 0;
             out[i + 1] = out[i + 2] = 255;
         }
@@ -227,8 +237,8 @@ static void WriteCsvHeader(std::ostream& out)
 {
     out << "file,width,height,baseline_left,baseline_top,baseline_width,"
            "baseline_height,baseline_pixels,baseline_us,jaw_left,jaw_top,"
-           "jaw_width,jaw_height,jaw_pixels,jaw_us,jaw_found,mouth_y,"
-           "mouth_score,mouth_slope,curve_center_y\n";
+           "jaw_width,jaw_height,jaw_pixels,jaw_us,jaw_found,center_x,"
+           "head_width,peak_row,chin_row,curve_center_y\n";
 }
 
 static void WriteCsvRow(std::ostream& out, const std::string& name,
@@ -242,8 +252,9 @@ static void WriteCsvRow(std::ostream& out, const std::string& name,
         << b.left << ',' << b.top << ',' << b.width << ',' << b.height << ','
         << b.pixelCount << ',' << result.baselineUs << ','
         << j.left << ',' << j.top << ',' << j.width << ',' << j.height << ','
-        << j.pixelCount << ',' << result.jawUs << ',' << !c.rows.empty() << ','
-        << c.mouthY << ',' << c.mouthScore << ',' << c.mouthSlope << ','
+        << j.pixelCount << ',' << result.jawUs << ',' << c.valid << ','
+        << c.centerX << ',' << c.headWidth << ',' << c.peakRow << ','
+        << c.chinRow << ','
         << center << '\n';
 }
 
@@ -281,7 +292,7 @@ int main(int argc, char** argv)
         std::printf("jaw:      %d %d %d %d pixels=%d time=%lldus found=%d\n",
             result.jaw.left, result.jaw.top, result.jaw.width,
             result.jaw.height, result.jaw.pixelCount, result.jawUs,
-            !result.curve.rows.empty());
+            result.curve.valid);
         return csv ? 0 : 2;
     }
     const fs::path inputDir(argv[2]), outputDir(argv[3]);

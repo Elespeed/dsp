@@ -116,7 +116,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
     // 在覆盖降采样 Y 平面之前完成定位，保留原始亮度和色度证据。
     FaceSegmentation::BaselineStages stages{};
     FaceSegmentation::Result face = FaceSegmentation::RunJawRefined(
-        u, v, maskW, maskH, bs->colorBmp, nullptr, &stages);
+        u, v, maskW, maskH, bs->clrBmp_1d8, maskW * 2, nullptr, &stages);
 
     memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
     // 将最终 mask 写入降采样 Y 平面，U/V 平面保持不变。

@@ -55,8 +55,10 @@ int main(int argc, char** argv)
     runLocate(w, h, y, u, v, shared.data());
 
     if (bs->rcnFace.left != 80 || bs->rcnFace.top != 25 ||
-        bs->rcnFace.width != 40 || bs->rcnFace.height != 24 ||
-        bs->nFacePixelNum != 960 ||
+        bs->rcnFace.width != 40 || bs->rcnFace.height >= 24 ||
+        bs->nFacePixelNum <= 0 || bs->nFacePixelNum >= 960 ||
+        !bs->TempImage1d8[30 * (w / 4) + 50] ||
+        bs->TempImage1d8[45 * (w / 4) + 50] ||
         std::memcmp(originalUV.data(), bs->clrBmp_1d8 + yCount,
                     uvCount * 2) != 0)
     {
@@ -65,16 +67,7 @@ int main(int argc, char** argv)
             bs->rcnFace.height, bs->nFacePixelNum);
         return 1;
     }
-    for (int row = 0; row < h / 4; ++row)
-        for (int col = 0; col < w / 4; ++col)
-        {
-            const bool expected = col >= 40 && col < 60 &&
-                                  row >= 25 && row < 49;
-            if ((bs->TempImage1d8[row * (w / 4) + col] != 0) != expected)
-                return 1;
-        }
-
-    // 用头颈连通样本确认 DLL 实际采用嘴部引导裁剪。
+    // 用头颈连通样本确认 DLL 实际采用稳定脸宽驱动的下颚曲线。
     std::fill(y, y + pixels, 150);
     std::memset(u, 0, pixels);
     auto fillSkin = [&](int left, int top, int right, int bottom)
@@ -87,7 +80,8 @@ int main(int argc, char** argv)
                 v[index] = 145;
             }
     };
-    fillSkin(63, 18, 97, 57);
+    fillSkin(70, 18, 90, 30);
+    fillSkin(63, 30, 97, 57);
     fillSkin(71, 57, 88, 85);
     std::fill(y + 42 * 4 * w, y + (42 * 4 + 1) * w, 90);
     std::fill(shared.begin(), shared.end(), 0);
@@ -106,6 +100,27 @@ int main(int argc, char** argv)
             bs->rcnFace.left, bs->rcnFace.top, bs->rcnFace.width,
             bs->rcnFace.height, bs->TempImage1d8[45 * (w / 4) + 80] != 0,
             bs->TempImage1d8[68 * (w / 4) + 80] != 0);
+        return 1;
+    }
+
+    // 过窄连通域不能形成可信脸宽，应完整回退到肤色基线。
+    std::fill(y, y + pixels, 150);
+    std::memset(u, 0, pixels);
+    fillSkin(75, 20, 85, 50);
+    std::fill(shared.begin(), shared.end(), 0);
+    ((BUF_STRUCT*)shared.data())->bNotInited = true;
+    runPrepare(w, h, y, u, v, shared.data());
+    bs = (BUF_STRUCT*)shared.data();
+    runLocate(w, h, y, u, v, shared.data());
+    if (bs->rcnFace.left != 150 || bs->rcnFace.top != 20 ||
+        bs->rcnFace.width != 20 || bs->rcnFace.height != 30 ||
+        bs->nFacePixelNum != 600 ||
+        !bs->TempImage1d8[20 * (w / 4) + 75] ||
+        !bs->TempImage1d8[49 * (w / 4) + 84])
+    {
+        std::fprintf(stderr, "baseline fallback: box=%d,%d,%d,%d pixels=%d\n",
+            bs->rcnFace.left, bs->rcnFace.top, bs->rcnFace.width,
+            bs->rcnFace.height, bs->nFacePixelNum);
         return 1;
     }
     std::puts("FaceLocator plugin contract: PASS");

@@ -34,7 +34,7 @@
     <ClInclude Include="FaceSegmentation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="JawCut.h">
+    <ClInclude Include="JawRefiner.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Resource.h">
