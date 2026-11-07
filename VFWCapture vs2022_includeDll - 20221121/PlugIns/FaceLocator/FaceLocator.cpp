@@ -1,4 +1,4 @@
-// FaceLocator.cpp : Defines the initialization routines for the DLL.
+ï»¿// FaceLocator.cpp : Defines the initialization routines for the DLL.
 #include "stdafx.h"
 #include "FaceLocator.h"
 #include "BufStruct.h"
@@ -53,21 +53,21 @@ CFaceLocatorApp::CFaceLocatorApp()
 /////////////////////////////////////////////////////////////////////////////
 // The one and only CFaceLocatorApp object
 CFaceLocatorApp theApp;
-char sInfo[] = "ÈËÁ³¸ú×Ù-»ùÓÚ²ÊÉ«ĞÅÏ¢µÄÈËÁ³·Ö¸î´¦Àí²å¼ş";
+char sInfo[] = "Face localization and jaw-line refinement";
 bool bLastPlugin = false;
 DLL_EXP void ON_PLUGIN_BELAST(bool bLast)
 {
-	AFX_MANAGE_STATE(AfxGetStaticModuleState());//Ä£¿é×´Ì¬ÇĞ»»
+	AFX_MANAGE_STATE(AfxGetStaticModuleState()); // åˆ‡æ¢åˆ°æ’ä»¶æ¨¡å—çŠ¶æ€ã€‚
 	bLastPlugin = bLast;
 }
 DLL_EXP LPCTSTR ON_PLUGININFO(void)
 {
-	AFX_MANAGE_STATE(AfxGetStaticModuleState());//Ä£¿é×´Ì¬ÇĞ»»
+	AFX_MANAGE_STATE(AfxGetStaticModuleState()); // åˆ‡æ¢åˆ°æ’ä»¶æ¨¡å—çŠ¶æ€ã€‚
 	return sInfo;
 }
 DLL_EXP void ON_INITPLUGIN(LPVOID lpParameter)
 {
-	AFX_MANAGE_STATE(AfxGetStaticModuleState());//Ä£¿é×´Ì¬ÇĞ»»
+	AFX_MANAGE_STATE(AfxGetStaticModuleState()); // åˆ‡æ¢åˆ°æ’ä»¶æ¨¡å—çŠ¶æ€ã€‚
 	//theApp.dlg.Create(IDD_PLUGIN_SETUP);
 	//theApp.dlg.ShowWindow(SW_HIDE);
 }
@@ -87,10 +87,10 @@ DLL_EXP int ON_PLUGINCTRL(int nMode,void* pParameter)
 	return nRet;
 }
 /****************************************************************************************/
-/*                             ÈËÁ³¼ì²âÓë¶¨Î»                                           */
+/*                              äººè„¸åˆ†å‰²ä¸å®šä½                                          */
 /****************************************************************************************/
 
-
+// åªæ¥å—å…±äº«ç¼“å†²åŒºå¸ƒå±€æ”¯æŒçš„å›¾åƒå°ºå¯¸ã€‚
 DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
                           BYTE* pVBits, BYTE* pBuffer)
 {
@@ -113,13 +113,13 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
     const int uvCount = maskW * maskH;
     const BYTE* u = bs->clrBmp_1d8 + yCount;
     const BYTE* v = u + uvCount;
-    // ÔÚ Y Æ½ÃæĞ´Èë¶şÖµÍ¼Ö®Ç°£¬ÏÈÓÃÔ­ÁÁ¶È¶¨Î»ÏÂ°Í²¢²ÃµôÏÂ·½·ôÉ«¡£
-    // Ê¹ÓÃÔ¤´¦Àí±£´æµÄÔ­Ê¼ YUV£¬±ÜÃâ»­¿òºÍÔ¤ÀÀ¸²¸Ç×ì²¿ÑÕÉ«Ö¤¾İ¡£
+    // åœ¨è¦†ç›–é™é‡‡æ · Y å¹³é¢ä¹‹å‰å®Œæˆå®šä½ï¼Œä¿ç•™åŸå§‹äº®åº¦å’Œè‰²åº¦è¯æ®ã€‚
+    FaceSegmentation::BaselineStages stages{};
     FaceSegmentation::Result face = FaceSegmentation::RunJawRefined(
-        u, v, maskW, maskH, bs->colorBmp);
+        u, v, maskW, maskH, bs->colorBmp, nullptr, &stages);
 
     memcpy(bs->TempImage1d8, face.mask.data(), uvCount);
-    // ½öÔÚ½µ²ÉÑùÍ¼µÄ Y Æ½ÃæĞ´¶şÖµ½á¹û£¬±£Áô U/V ¹©ºóĞø²å¼şÊ¹ÓÃ¡£
+    // å°†æœ€ç»ˆ mask å†™å…¥é™é‡‡æ · Y å¹³é¢ï¼ŒU/V å¹³é¢ä¿æŒä¸å˜ã€‚
     BYTE* reducedY = bs->clrBmp_1d8;
     for (int y = 0; y < maskH; ++y)
         for (int x = 0; x < maskW; ++x)
@@ -137,19 +137,25 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
         bs->rcnFace.height = face.height;
         bs->nFacePixelNum = face.pixelCount;
 
-        // ¿ò´Ó clrBmp_1d8 ×ø±ê»»Ëãµ½Ô­Ê¼ÊÓÆµ×ø±ê¡£
+        // å°†é™é‡‡æ ·åæ ‡æ¢ç®—ä¸ºåŸå§‹è§†é¢‘åæ ‡ã€‚
         aRect original = { face.left * 2, face.top * 4,
                            face.width * 2, face.height * 4 };
         DrawRectangle(pYBits, w, h, original, RGB(235, 16, 240), false);
     }
 
-    // ÔÚ»­ÃæÓÒÉÏ½ÇÏÔÊ¾É«¶È·Ö±æÂÊµÄ¶şÖµ mask¡£
+    // åœ¨ç”»é¢é¡¶éƒ¨ä¾æ¬¡æ˜¾ç¤ºé˜ˆå€¼ã€å¼€è¿ç®—ã€é—­è¿ç®—å’Œæœ€ç»ˆ maskã€‚
+    CopyToRect(stages.threshold.data(), pYBits, maskW, maskH, w, h,
+               0, 0, true);
+    CopyToRect(stages.opened.data(), pYBits, maskW, maskH, w, h,
+               maskW, 0, true);
+    CopyToRect(stages.closed.data(), pYBits, maskW, maskH, w, h,
+               maskW * 2, 0, true);
     CopyToRect(bs->TempImage1d8, pYBits, maskW, maskH,
                w, h, w - maskW, 0, true);
 }
 DLL_EXP void ON_PLUGINEXIT()
 {
-	AFX_MANAGE_STATE(AfxGetStaticModuleState());//Ä£¿é×´Ì¬ÇĞ»»
+	AFX_MANAGE_STATE(AfxGetStaticModuleState()); // åˆ‡æ¢åˆ°æ’ä»¶æ¨¡å—çŠ¶æ€ã€‚
 	//theApp.dlg.DestroyWindow();
 }
 

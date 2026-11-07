@@ -23,6 +23,7 @@ struct BmpImage
 struct ProbeResult
 {
     FaceSegmentation::Result baseline, jaw;
+    FaceSegmentation::BaselineStages stages;
     JawCut::Curve curve;
     long long baselineUs = 0, jawUs = 0;
 };
@@ -72,7 +73,7 @@ static bool ReadBmp(const fs::path& path, BmpImage& image)
     return true;
 }
 
-static ProbeResult Probe(const BmpImage& image)
+static ProbeResult Probe(const BmpImage& image, bool captureStages = false)
 {
     const int mw = image.width / 4, mh = image.height / 4;
     const int pixels = image.width * image.height;
@@ -108,7 +109,8 @@ static ProbeResult Probe(const BmpImage& image)
         }
     ProbeResult result;
     const auto start = std::chrono::steady_clock::now();
-    result.baseline = FaceSegmentation::RunBaseline(u.data(), v.data(), mw, mh);
+    result.baseline = FaceSegmentation::RunBaseline(
+        u.data(), v.data(), mw, mh, captureStages ? &result.stages : nullptr);
     const auto middle = std::chrono::steady_clock::now();
     result.jaw = FaceSegmentation::RunJawRefined(u.data(), v.data(), mw, mh,
                                                 yuv.data(), &result.curve);
@@ -120,16 +122,25 @@ static ProbeResult Probe(const BmpImage& image)
     return result;
 }
 
-static bool WriteMask(const fs::path& path, const FaceSegmentation::Result& face,
-                      int width, int height)
+static bool WriteMaskBytes(const fs::path& path,
+                           const std::vector<unsigned char>& mask,
+                           int width, int height)
 {
+    if (mask.size() != static_cast<std::size_t>(width) * height)
+        return false;
     std::ofstream out(path, std::ios::binary);
     if (!out)
         return false;
     out << "P5\n" << width << ' ' << height << "\n255\n";
-    out.write(reinterpret_cast<const char*>(face.mask.data()),
-              static_cast<std::streamsize>(face.mask.size()));
+    out.write(reinterpret_cast<const char*>(mask.data()),
+              static_cast<std::streamsize>(mask.size()));
     return static_cast<bool>(out);
+}
+
+static bool WriteMask(const fs::path& path, const FaceSegmentation::Result& face,
+                      int width, int height)
+{
+    return WriteMaskBytes(path, face.mask, width, height);
 }
 
 static bool WriteOverlay(const fs::path& path, const BmpImage& image,
@@ -201,6 +212,17 @@ static bool WriteResults(const fs::path& prefix, const BmpImage& image,
            WriteCandidateLine(prefix.string() + "_candidate.bmp", image, result.curve);
 }
 
+static bool WriteStages(const fs::path& prefix, const BmpImage& image,
+                        const ProbeResult& result)
+{
+    const int mw = image.width / 4, mh = image.height / 4;
+    // 阶段图仅供离线记录；最终图直接复用实际算法的输出。
+    return WriteMaskBytes(prefix.string() + "_threshold.pgm", result.stages.threshold, mw, mh) &&
+           WriteMaskBytes(prefix.string() + "_opened.pgm", result.stages.opened, mw, mh) &&
+           WriteMaskBytes(prefix.string() + "_closed.pgm", result.stages.closed, mw, mh) &&
+           WriteMaskBytes(prefix.string() + "_largest.pgm", result.stages.largest, mw, mh);
+}
+
 static void WriteCsvHeader(std::ostream& out)
 {
     out << "file,width,height,baseline_left,baseline_top,baseline_width,"
@@ -228,26 +250,31 @@ static void WriteCsvRow(std::ostream& out, const std::string& name,
 int main(int argc, char** argv)
 {
     const bool batch = argc == 4 && std::string(argv[1]) == "--batch";
-    if (!(argc == 3 || batch))
+    const bool stages = argc == 4 && std::string(argv[1]) == "--stages";
+    if (!(argc == 3 || batch || stages))
     {
         std::fprintf(stderr, "usage: face_probe_bmp input.bmp output_prefix\n"
+                             "   or: face_probe_bmp --stages input.bmp output_prefix\n"
                              "   or: face_probe_bmp --batch input_dir output_dir\n");
         return 2;
     }
     if (!batch)
     {
         BmpImage image;
-        if (!ReadBmp(argv[1], image))
+        const char* input = argv[stages ? 2 : 1];
+        const char* prefix = argv[stages ? 3 : 2];
+        if (!ReadBmp(input, image))
         {
             std::fprintf(stderr, "expected uncompressed 24-bit BMP with width divisible by 16 and height divisible by 4\n");
             return 2;
         }
-        const ProbeResult result = Probe(image);
-        if (!WriteResults(argv[2], image, result))
+        const ProbeResult result = Probe(image, stages);
+        if (!WriteResults(prefix, image, result) ||
+            (stages && !WriteStages(prefix, image, result)))
             return 2;
-        std::ofstream csv(std::string(argv[2]) + ".csv");
+        std::ofstream csv(std::string(prefix) + ".csv");
         WriteCsvHeader(csv);
-        WriteCsvRow(csv, fs::path(argv[1]).filename().string(), image, result);
+        WriteCsvRow(csv, fs::path(input).filename().string(), image, result);
         std::printf("baseline: %d %d %d %d pixels=%d time=%lldus\n",
             result.baseline.left, result.baseline.top, result.baseline.width,
             result.baseline.height, result.baseline.pixelCount, result.baselineUs);

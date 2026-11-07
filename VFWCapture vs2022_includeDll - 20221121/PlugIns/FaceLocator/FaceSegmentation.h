@@ -17,6 +17,7 @@ namespace FaceSegmentation
 {
 struct Result
 {
+    // 保存最终 mask、外接框和像素统计。
     std::vector<unsigned char> mask;
     int left = 0;
     int top = 0;
@@ -27,6 +28,14 @@ struct Result
     int neckFaceLeft = 0;
     int neckFaceRight = 0;
     int neckCurveRise = 0;
+};
+
+struct BaselineStages
+{
+    std::vector<unsigned char> threshold;
+    std::vector<unsigned char> opened;
+    std::vector<unsigned char> closed;
+    std::vector<unsigned char> largest;
 };
 
 inline void Morph(const std::vector<unsigned char>& input,
@@ -73,10 +82,12 @@ inline void Morph(const std::vector<unsigned char>& input,
         }
 }
 
+// 沿父标签回溯到连通域的根标签。
 inline int FindRoot(std::vector<int>& parent, int label)
 {
     while (parent[label] != label)
     {
+        // 路径压缩，避免重复遍历父标签链。
         parent[label] = parent[parent[label]];
         label = parent[label];
     }
@@ -84,23 +95,34 @@ inline int FindRoot(std::vector<int>& parent, int label)
 }
 
 inline Result RunBaseline(const unsigned char* u, const unsigned char* v,
-                          int width, int height)
+                          int width, int height,
+                          BaselineStages* stages = nullptr)
 {
     Result result;
+    if (stages)
+        *stages = BaselineStages();
     if (!u || !v || width <= 0 || height <= 0)
         return result;
     const int count = width * height;
     result.mask.resize(count);
+    // 根据 U/V 色度范围生成肤色二值图。
     for (int i = 0; i < count; ++i)
         result.mask[i] = u[i] >= 85 && u[i] <= 126 &&
                          v[i] >= 130 && v[i] <= 165 ? 255 : 0;
-
+    if (stages)
+        stages->threshold = result.mask;
+    // 开运算去除背景中的细小白色噪点。
     std::vector<unsigned char> temporary;
     Morph(result.mask, temporary, width, height, 1, true);
     Morph(temporary, result.mask, width, height, 1, false);
+    if (stages)
+        stages->opened = result.mask;
+    // 闭运算填补肤色区域中的黑色孔洞。
     Morph(result.mask, temporary, width, height, 3, false);
     Morph(temporary, result.mask, width, height, 3, true);
-
+    if (stages)
+        stages->closed = result.mask;
+    // 使用四连通域标记保留最大肤色区域。
     std::vector<int> labels(count, 0);
     std::vector<int> parent(count + 1, 0);
     int nextLabel = 1;
@@ -118,9 +140,11 @@ inline Result RunBaseline(const unsigned char* u, const unsigned char* v,
                 parent[nextLabel] = nextLabel;
                 ++nextLabel;
             }
+            // 只有一个相邻标签时直接继承该标签。
             else if (!left || !top)
                 labels[index] = left ? left : top;
             else
+            // 左侧和上方均有标签时合并两个连通域。
             {
                 const int a = FindRoot(parent, left);
                 const int b = FindRoot(parent, top);
@@ -128,9 +152,10 @@ inline Result RunBaseline(const unsigned char* u, const unsigned char* v,
                 parent[std::max(a, b)] = std::min(a, b);
             }
         }
-
+    // 统计各连通域的面积和外接框。
     struct Component
     {
+        // 像素数和坐标极值共同确定外接框。
         int count = 0;
         int minX = 0;
         int minY = 0;
@@ -145,6 +170,7 @@ inline Result RunBaseline(const unsigned char* u, const unsigned char* v,
             const int index = y * width + x;
             if (!labels[index])
                 continue;
+            // 将临时标签替换为压缩后的根标签。
             const int root = FindRoot(parent, labels[index]);
             labels[index] = root;
             Component& c = components[root];
@@ -165,11 +191,17 @@ inline Result RunBaseline(const unsigned char* u, const unsigned char* v,
                 largest = root;
         }
     if (!largest)
+    {
+        if (stages)
+            stages->largest = result.mask;
         return result;
-
+    }
+    // 删除最大连通域之外的白色像素。
     for (int i = 0; i < count; ++i)
         if (labels[i] != largest)
             result.mask[i] = 0;
+    if (stages)
+        stages->largest = result.mask;
     const Component& face = components[largest];
     result.left = face.minX * 2;
     result.top = face.minY;
@@ -492,11 +524,12 @@ inline Result RunNeckRefined(const unsigned char* u, const unsigned char* v,
 inline Result RunJawRefined(const unsigned char* u, const unsigned char* v,
                             int width, int height,
                             const unsigned char* originalYuv,
-                            JawCut::Curve* diagnostic = 0)
+                            JawCut::Curve* diagnostic = 0,
+                            BaselineStages* stages = 0)
 {
     if (diagnostic)
         *diagnostic = JawCut::Curve();
-    Result baseline = RunBaseline(u, v, width, height);
+    Result baseline = RunBaseline(u, v, width, height, stages);
     if (!baseline.pixelCount || !originalYuv || width <= 0 || height <= 0 ||
         width > 44739242 / height)
         return baseline;

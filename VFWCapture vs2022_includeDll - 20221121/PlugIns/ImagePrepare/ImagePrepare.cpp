@@ -187,10 +187,35 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits,
             bs->grayBmp_1d16[y * (w / 4) + x] =
                 pYBits[(y * 4) * w + x * 4];
 
-    // 单独激活预处理插件时，在右上角展示降采样结果以核对坐标。
+    // 单独激活预处理插件时，在右侧同时展示降采样彩图和灰度图。
     if (bLastPlugin)
-        CopyToRect(bs->clrBmp_1d8, pYBits, smallW, smallH,
-                   w, h, w - smallW, 0, false);
+    {
+        const int colorLeft = w - smallW;
+        for (int y = 0; y < smallH; ++y)
+        {
+            memcpy(pYBits + y * w + colorLeft,
+                   outY + y * smallW, smallW);
+            memcpy(pUBits + y * (w / 2) + colorLeft / 2,
+                   outU + y * (smallW / 2), smallW / 2);
+            memcpy(pVBits + y * (w / 2) + colorLeft / 2,
+                   outV + y * (smallW / 2), smallW / 2);
+        }
+
+        const int grayW = w / 4;
+        const int grayH = h / 4;
+        const int grayLeft = w - grayW;
+        const int grayTop = smallH;
+        CopyToRect(bs->grayBmp_1d16, pYBits, grayW, grayH,
+                   w, h, grayLeft, grayTop, true);
+
+        // YUV422 灰图还需要将对应色度设为中性值，否则会残留底图色偏。
+        for (int y = 0; y < grayH; ++y)
+        {
+            const int chromaOffset = (grayTop + y) * (w / 2) + grayLeft / 2;
+            memset(pUBits + chromaOffset, 128, grayW / 2);
+            memset(pVBits + chromaOffset, 128, grayW / 2);
+        }
+    }
 }
 DLL_EXP void ON_PLUGINEXIT()
 {

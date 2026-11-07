@@ -38,7 +38,7 @@
 
 ## 离线图片与视频测试
 
-单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。当前分支导出课程基线与嘴部引导裁剪的 mask、画框图、候选曲线、像素统计与算法耗时。
+单张无压缩 24 位 BMP 可用 `tools/face_probe_bmp.cpp` 检查；批量图片使用 `face_probe_bmp --batch 输入目录 输出目录`。单帧报告取证可用 `face_probe_bmp --stages 输入.bmp 输出前缀` 额外导出肤色阈值、开运算、闭运算与最大连通域的 PGM 阶段图，常规基线和嘴部裁剪输出仍同时生成。当前分支导出课程基线与嘴部引导裁剪的 mask、画框图、候选曲线、像素统计与算法耗时。
 
 视频使用 `tools/run_video_probe.ps1` 按每秒 2 帧抽样，结果保存在 `fig/iterations/改动名/`。每次改动使用新名字，已有目录不会被覆盖。首轮实拍复测及失败案例见 [参考算法借鉴与实拍视频复测](doc/参考算法借鉴与实拍视频复测.md)；运行命令见 [迭代结果说明](fig/iterations/README.md)。原始人像视频只在本机保留，不纳入 Git。
 
